@@ -334,7 +334,7 @@ export default function InternalPipeline() {
     const { data: briefData } = await supabase
       .from('briefs')
       .select('*')
-      .neq('pipeline_status', 'backlog')
+      .eq('pipeline_status', 'in_production')
       .order('created_at', { ascending: false })
 
     if (!briefData?.length) { setBriefs([]); setLoading(false); return }
