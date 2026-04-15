@@ -2,12 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutGrid, LogOut, Users, Kanban } from 'lucide-react'
+import { LayoutGrid, LogOut, Kanban, LayoutDashboard } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 const nav = [
-  { href: '/',         label: 'All Clients',         icon: LayoutGrid },
-  { href: '/pipeline', label: 'Production Pipeline', icon: Kanban },
+  { href: '/dashboard', label: 'Dashboard',          icon: LayoutDashboard },
+  { href: '/',          label: 'All Clients',         icon: LayoutGrid },
+  { href: '/pipeline',  label: 'Production Pipeline', icon: Kanban },
 ]
 
 function cn(...classes: (string | boolean | undefined)[]) {
@@ -38,7 +39,7 @@ export function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-0.5">
         {nav.map(({ href, label, icon: Icon }) => {
-          const active = href === '/' ? pathname === '/' : pathname.startsWith(href)
+          const active = href === '/' ? pathname === '/' : href === '/dashboard' ? pathname.startsWith('/dashboard') : pathname.startsWith(href)
           return (
             <Link
               key={href}
