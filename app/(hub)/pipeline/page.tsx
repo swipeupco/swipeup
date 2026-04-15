@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { BriefDrawer } from '@/components/pipeline/BriefDrawer'
 import { AlertTriangle, MessageSquare } from 'lucide-react'
+import { INTERNAL_STAGES } from '@/lib/pipeline/stages'
 
 interface ClientInfo {
   name: string
@@ -25,12 +26,6 @@ interface Brief {
   clients: ClientInfo | null
 }
 
-const INTERNAL_STAGES = [
-  { key: 'in_production',      label: 'In Production',      shortLabel: 'In Prod',    color: 'bg-amber-50',  header: 'bg-amber-200',  text: 'text-amber-800' },
-  { key: 'revisions_required', label: 'Revisions Required', shortLabel: 'Revisions',  color: 'bg-red-50',    header: 'bg-red-200',    text: 'text-red-800' },
-  { key: 'ready_for_review',   label: 'Ready for Review',   shortLabel: 'Ready',      color: 'bg-blue-50',   header: 'bg-blue-200',   text: 'text-blue-800' },
-  { key: 'approved_by_client', label: 'Approved by Client', shortLabel: 'Approved',   color: 'bg-green-50',  header: 'bg-green-200',  text: 'text-green-800' },
-]
 
 export default function InternalPipeline() {
   const [briefs, setBriefs]           = useState<Brief[]>([])

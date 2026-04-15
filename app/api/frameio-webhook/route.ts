@@ -2,13 +2,15 @@ export const dynamic = 'force-dynamic'
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { createHmac } from 'crypto'
 
 /**
  * Frame.io webhook endpoint.
  *
  * Configure in Frame.io → Team Settings → Webhooks:
  *   URL:    https://<your-hub-domain>/api/frameio-webhook
- *   Secret: set FRAMEIO_WEBHOOK_SECRET in env, leave blank to skip verification
+ *   Secret: YSHg2ULzD3YadWtwmAHGmBF204kfIGW-DFYAdYX_aLnhf1xd8PZQZLfXXhXmgsuy
+ *           (set this as FRAMEIO_WEBHOOK_SECRET in Vercel env vars)
  *   Events: review_link.created, asset.ready
  *
  * Matching logic: the asset name (or review link name) must contain the brief
@@ -18,93 +20,98 @@ import { NextResponse } from 'next/server'
  *   - Sets draft_url to the Frame.io review link
  *   - Advances internal_status to 'ready_for_review' if it was 'in_production'
  */
-export async function POST(request: Request) {
-  const supabaseAdmin = createClient(
+
+function makeAdmin() {
+  return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
+}
 
+export async function POST(request: Request) {
   try {
-    const body = await request.json()
-    const eventType: string = body.type ?? ''
+    const secret = process.env.FRAMEIO_WEBHOOK_SECRET
+    let body: any
 
-    // ── Extract review URL and asset name from payload ──────────────────────
-    let reviewUrl: string | null = null
-    let assetName: string | null = null
-
-    if (eventType === 'review_link.created') {
-      reviewUrl = body.resource?.short_url ?? body.resource?.url ?? null
-      assetName = body.resource?.name
-        ?? body.resource?.items?.[0]?.asset?.name
-        ?? null
-    } else if (eventType === 'asset.ready') {
-      // asset.ready doesn't carry a review link — use the asset viewer URL
-      const assetId = body.resource?.id
-      assetName = body.resource?.name ?? null
-      if (assetId) {
-        reviewUrl = `https://app.frame.io/reviews/${assetId}`
+    if (secret) {
+      const rawBody = await request.text()
+      const signature = request.headers.get('x-frameio-signature') ?? ''
+      const expected = createHmac('sha256', secret).update(rawBody).digest('hex')
+      if (signature !== expected) {
+        return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
       }
+      body = JSON.parse(rawBody)
     } else {
-      // Unrecognised event — acknowledge and ignore
-      return NextResponse.json({ received: true, matched: false, reason: 'unhandled_event_type' })
+      body = await request.json()
     }
 
-    if (!reviewUrl || !assetName) {
-      return NextResponse.json({ received: true, matched: false, reason: 'missing_url_or_name' })
-    }
-
-    // ── Fetch all non-approved briefs to match against ──────────────────────
-    const { data: briefs, error } = await supabaseAdmin
-      .from('briefs')
-      .select('id, name, internal_status')
-      .neq('pipeline_status', 'approved')
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-
-    // ── Match: assetName contains brief name (case-insensitive) ─────────────
-    const needle = assetName.toLowerCase()
-    const match = briefs?.find(b => needle.includes(b.name.toLowerCase()))
-
-    if (!match) {
-      return NextResponse.json({
-        received: true,
-        matched: false,
-        reason: 'no_brief_matched',
-        assetName,
-      })
-    }
-
-    // ── Update brief ─────────────────────────────────────────────────────────
-    const updates: Record<string, string> = { draft_url: reviewUrl }
-
-    // Only advance status if still in early production stage
-    if (match.internal_status === 'in_production' || match.internal_status == null) {
-      updates.internal_status = 'ready_for_review'
-    }
-
-    const { error: updateError } = await supabaseAdmin
-      .from('briefs')
-      .update(updates)
-      .eq('id', match.id)
-
-    if (updateError) {
-      return NextResponse.json({ error: updateError.message }, { status: 500 })
-    }
-
-    return NextResponse.json({
-      received: true,
-      matched: true,
-      briefId: match.id,
-      briefName: match.name,
-      draftUrl: reviewUrl,
-      statusAdvanced: !!updates.internal_status,
-    })
+    return handleWebhook(body)
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
+}
+
+async function handleWebhook(body: any) {
+  const supabaseAdmin = makeAdmin()
+  const eventType: string = body.type ?? ''
+
+  // ── Extract review URL and asset name from payload ────────────────────────
+  let reviewUrl: string | null = null
+  let assetName: string | null = null
+
+  if (eventType === 'review_link.created') {
+    reviewUrl = body.resource?.short_url ?? body.resource?.url ?? null
+    assetName = body.resource?.name ?? body.resource?.items?.[0]?.asset?.name ?? null
+  } else if (eventType === 'asset.ready') {
+    const assetId = body.resource?.id
+    assetName = body.resource?.name ?? null
+    if (assetId) reviewUrl = `https://app.frame.io/reviews/${assetId}`
+  } else {
+    return NextResponse.json({ received: true, matched: false, reason: 'unhandled_event_type' })
+  }
+
+  if (!reviewUrl || !assetName) {
+    return NextResponse.json({ received: true, matched: false, reason: 'missing_url_or_name' })
+  }
+
+  // ── Fetch active briefs to match against ─────────────────────────────────
+  const { data: briefs, error } = await supabaseAdmin
+    .from('briefs')
+    .select('id, name, internal_status')
+    .neq('pipeline_status', 'approved')
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // ── Match: asset name contains brief name (case-insensitive) ─────────────
+  const needle = assetName.toLowerCase()
+  const match = briefs?.find(b => needle.includes(b.name.toLowerCase()))
+
+  if (!match) {
+    return NextResponse.json({ received: true, matched: false, reason: 'no_brief_matched', assetName })
+  }
+
+  // ── Update brief ──────────────────────────────────────────────────────────
+  const updates: Record<string, string> = { draft_url: reviewUrl }
+  if (match.internal_status === 'in_production' || match.internal_status == null) {
+    updates.internal_status = 'ready_for_review'
+  }
+
+  const { error: updateError } = await supabaseAdmin
+    .from('briefs')
+    .update(updates)
+    .eq('id', match.id)
+
+  if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 })
+
+  return NextResponse.json({
+    received: true,
+    matched: true,
+    briefId: match.id,
+    briefName: match.name,
+    draftUrl: reviewUrl,
+    statusAdvanced: !!updates.internal_status,
+  })
 }
 
 // Frame.io sends a GET to verify the endpoint during setup

@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { X, ExternalLink, Send, Lock, MessageSquare, Link as LinkIcon, ArrowRight, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { format } from 'date-fns'
+import { CLIENT_STAGES, CLIENT_STAGE_LABELS, INTERNAL_STAGES, INTERNAL_STAGE_BADGES } from '@/lib/pipeline/stages'
 
 interface Brief {
   id: string
@@ -38,28 +39,7 @@ interface Props {
   internalMode?: boolean
 }
 
-const CLIENT_STAGES = ['backlog', 'in_production', 'qa_review', 'client_review', 'approved']
-const CLIENT_STAGE_LABELS: Record<string, string> = {
-  backlog:       'Backlog',
-  in_production: 'In Production',
-  qa_review:     'QA Review',
-  client_review: 'Client Review',
-  approved:      'Approved',
-}
-
-const INTERNAL_STAGES = [
-  { key: 'in_production',      label: 'In Production',      short: 'In Prod' },
-  { key: 'revisions_required', label: 'Revisions Required', short: 'Revisions' },
-  { key: 'ready_for_review',   label: 'Ready for Review',   short: 'Ready' },
-  { key: 'approved_by_client', label: 'Approved by Client', short: 'Approved' },
-]
-
-const INTERNAL_STAGE_COLORS: Record<string, string> = {
-  in_production:      'bg-amber-100 text-amber-800',
-  revisions_required: 'bg-red-100 text-red-700',
-  ready_for_review:   'bg-blue-100 text-blue-700',
-  approved_by_client: 'bg-green-100 text-green-700',
-}
+const CLIENT_STAGE_KEYS = CLIENT_STAGES.map(s => s.key)
 
 export function BriefDrawer({ brief, clientColor, clientName, onClose, onMove, onInternalMove, onRefresh, internalMode }: Props) {
   const [comments, setComments]       = useState<Comment[]>([])
@@ -76,8 +56,8 @@ export function BriefDrawer({ brief, clientColor, clientName, onClose, onMove, o
   const currentInternalIndex = INTERNAL_STAGES.findIndex(s => s.key === internalStatus)
 
   // Client pipeline advance (non-internal mode)
-  const clientIndex = CLIENT_STAGES.indexOf(brief.pipeline_status)
-  const nextClientStage = clientIndex < CLIENT_STAGES.length - 1 ? CLIENT_STAGES[clientIndex + 1] : null
+  const clientIndex = CLIENT_STAGE_KEYS.indexOf(brief.pipeline_status)
+  const nextClientStage = clientIndex < CLIENT_STAGE_KEYS.length - 1 ? CLIENT_STAGE_KEYS[clientIndex + 1] : null
 
   async function loadComments() {
     const supabase = createClient()
@@ -181,7 +161,7 @@ export function BriefDrawer({ brief, clientColor, clientName, onClose, onMove, o
                 )}
                 {/* Internal status badge */}
                 {internalMode && (
-                  <span className={`text-[10px] font-semibold rounded-full px-2 py-0.5 ${INTERNAL_STAGE_COLORS[internalStatus]}`}>
+                  <span className={`text-[10px] font-semibold rounded-full px-2 py-0.5 ${INTERNAL_STAGE_BADGES[internalStatus]}`}>
                     {INTERNAL_STAGES.find(s => s.key === internalStatus)?.label}
                   </span>
                 )}

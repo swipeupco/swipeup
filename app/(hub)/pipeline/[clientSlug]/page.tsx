@@ -3,7 +3,7 @@
 import { useEffect, useState, use } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ExternalLink, Plus } from 'lucide-react'
+import { ArrowLeft, ExternalLink } from 'lucide-react'
 import { BriefDrawer } from '@/components/pipeline/BriefDrawer'
 
 interface Client {
@@ -26,13 +26,7 @@ interface Brief {
   client_id: string
 }
 
-const STAGES = [
-  { key: 'backlog',       label: 'Backlog',       color: 'bg-zinc-50',    header: 'bg-zinc-200',   text: 'text-zinc-700' },
-  { key: 'in_production', label: 'In Production', color: 'bg-amber-50',   header: 'bg-amber-200',  text: 'text-amber-800' },
-  { key: 'qa_review',     label: 'QA Review',     color: 'bg-purple-50',  header: 'bg-purple-200', text: 'text-purple-800' },
-  { key: 'client_review', label: 'Client Review', color: 'bg-blue-50',    header: 'bg-blue-200',   text: 'text-blue-800' },
-  { key: 'approved',      label: 'Approved',      color: 'bg-green-50',   header: 'bg-green-200',  text: 'text-green-800' },
-]
+import { CLIENT_STAGES as STAGES, CLIENT_STAGE_LABELS } from '@/lib/pipeline/stages'
 
 const CLIENT_URLS: Record<string, string> = {
   otrv: 'https://offtrackrvhub.vercel.app',
