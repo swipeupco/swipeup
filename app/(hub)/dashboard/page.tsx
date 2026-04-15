@@ -40,16 +40,20 @@ export default function Dashboard() {
     async function load() {
       const supabase = createClient()
 
-      const [{ data: briefData }, { data: commentData }] = await Promise.all([
-        supabase.from('briefs').select('*, clients(name, color, slug)').order('created_at', { ascending: false }),
-        supabase.from('brief_comments').select('id, brief_id, content, user_name, is_internal, created_at')
-          .eq('is_internal', false)
-          .order('created_at', { ascending: false })
-          .limit(50),
-      ])
+      const { data: briefData } = await supabase
+        .from('briefs')
+        .select('*, clients(name, color, slug)')
+        .order('created_at', { ascending: false })
 
-      setBriefs(briefData ?? [])
-      setComments(commentData ?? [])
+      const { data: commentData } = await supabase
+        .from('brief_comments')
+        .select('id, brief_id, content, user_name, is_internal, created_at')
+        .eq('is_internal', false)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      setBriefs((briefData as Brief[]) ?? [])
+      setComments((commentData as Comment[]) ?? [])
       setLoading(false)
     }
     load()
@@ -71,11 +75,15 @@ export default function Dashboard() {
 
   // Recent client feedback (last 5 unique briefs with comments)
   const recentFeedbackBriefIds = [...new Set(comments.map(c => c.brief_id))].slice(0, 5)
-  const recentFeedback = recentFeedbackBriefIds.map(id => {
-    const brief = briefs.find(b => b.id === id)
-    const latest = comments.find(c => c.brief_id === id)
-    return brief && latest ? { brief, comment: latest } : null
-  }).filter(Boolean) as { brief: Brief; comment: Comment }[]
+  const recentFeedback: { brief: Brief; comment: Comment }[] = recentFeedbackBriefIds.reduce(
+    (acc, id) => {
+      const brief = briefs.find(b => b.id === id)
+      const latest = comments.find(c => c.brief_id === id)
+      if (brief && latest) acc.push({ brief, comment: latest })
+      return acc
+    },
+    [] as { brief: Brief; comment: Comment }[]
+  )
 
   const metrics = [
     {
