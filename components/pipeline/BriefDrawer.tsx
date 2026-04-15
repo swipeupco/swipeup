@@ -2,10 +2,15 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { X, ExternalLink, Send, Lock, MessageSquare, Link as LinkIcon, ArrowRight, CheckCircle2, AlertTriangle } from 'lucide-react'
+import {
+  X, ExternalLink, Send, Lock, MessageSquare, Link as LinkIcon,
+  ArrowRight, CheckCircle2, AlertTriangle,
+} from 'lucide-react'
 import { format } from 'date-fns'
 import { CLIENT_STAGES, CLIENT_STAGE_LABELS, INTERNAL_STAGES, INTERNAL_STAGE_BADGES } from '@/lib/pipeline/stages'
 import { updateBriefStatus } from '@/lib/pipeline/updateBriefStatus'
+
+// ─── Interfaces ───────────────────────────────────────────────────────────────
 
 interface Brief {
   id: string
@@ -18,6 +23,7 @@ interface Brief {
   draft_url: string | null
   due_date: string | null
   client_id: string
+  cover_url?: string | null
 }
 
 interface Comment {
@@ -43,23 +49,53 @@ interface Props {
 
 const CLIENT_STAGE_KEYS = CLIENT_STAGES.map(s => s.key)
 
-export function BriefDrawer({ brief, clientColor, clientName, onClose, onMove, onInternalMove, onRefresh, onBriefUpdate, internalMode }: Props) {
-  const [comments, setComments]       = useState<Comment[]>([])
-  const [newComment, setNewComment]   = useState('')
-  const [isInternal, setIsInternal]   = useState(internalMode ?? false) // default to internal in hub
-  const [sending, setSending]         = useState(false)
-  const [draftUrl, setDraftUrl]       = useState(brief.draft_url ?? '')
-  const [savingUrl, setSavingUrl]     = useState(false)
-  const [urlSaved, setUrlSaved]       = useState(false)
-  const [tab, setTab]                 = useState<'brief' | 'comments'>('brief')
+// ─── Avatar helper ────────────────────────────────────────────────────────────
+
+function Avatar({ name, email, size = 32 }: { name: string | null; email: string | null; size?: number }) {
+  const label  = name ?? email?.split('@')[0] ?? '?'
+  const initials = label.slice(0, 2).toUpperCase()
+  // Deterministic colour from name
+  const colors = ['#6366f1','#8b5cf6','#ec4899','#14b8a6','#f59e0b','#10b981','#3b82f6']
+  const color  = colors[(label.charCodeAt(0) ?? 0) % colors.length]
+  return (
+    <div
+      className="rounded-full flex items-center justify-center text-white font-bold flex-shrink-0"
+      style={{ width: size, height: size, backgroundColor: color, fontSize: size * 0.38 }}
+    >
+      {initials}
+    </div>
+  )
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
+export function BriefDrawer({
+  brief, clientColor, clientName, onClose, onMove, onInternalMove,
+  onRefresh, onBriefUpdate, internalMode,
+}: Props) {
+  const [comments, setComments]     = useState<Comment[]>([])
+  const [newComment, setNewComment] = useState('')
+  const [isInternal, setIsInternal] = useState(internalMode ?? false)
+  const [sending, setSending]       = useState(false)
+  const [draftUrl, setDraftUrl]     = useState(brief.draft_url ?? '')
+  const [savingUrl, setSavingUrl]   = useState(false)
+  const [urlSaved, setUrlSaved]     = useState(false)
+  const [currentUserName, setCurrentUserName] = useState<string | null>(null)
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null)
   const commentsEndRef = useRef<HTMLDivElement>(null)
+  const textareaRef    = useRef<HTMLTextAreaElement>(null)
 
-  const internalStatus = brief.internal_status ?? 'in_production'
+  const internalStatus       = brief.internal_status ?? 'in_production'
   const currentInternalIndex = INTERNAL_STAGES.findIndex(s => s.key === internalStatus)
+  const clientIndex          = CLIENT_STAGE_KEYS.indexOf(brief.pipeline_status)
+  const nextClientStage      = clientIndex < CLIENT_STAGE_KEYS.length - 1 ? CLIENT_STAGE_KEYS[clientIndex + 1] : null
 
-  // Client pipeline advance (non-internal mode)
-  const clientIndex = CLIENT_STAGE_KEYS.indexOf(brief.pipeline_status)
-  const nextClientStage = clientIndex < CLIENT_STAGE_KEYS.length - 1 ? CLIENT_STAGE_KEYS[clientIndex + 1] : null
+  const clientComments   = comments.filter(c => !c.is_internal)
+  const internalComments = comments.filter(c => c.is_internal)
+  const hasClientFeedback = clientComments.length > 0
+
+  // Sync draft URL from prop
+  useEffect(() => { setDraftUrl(brief.draft_url ?? '') }, [brief.draft_url])
 
   async function loadComments() {
     const supabase = createClient()
@@ -73,7 +109,16 @@ export function BriefDrawer({ brief, clientColor, clientName, onClose, onMove, o
 
   useEffect(() => {
     loadComments()
+
     const supabase = createClient()
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setCurrentUserEmail(user.email ?? null)
+        supabase.from('profiles').select('name').eq('id', user.id).single()
+          .then(({ data }) => setCurrentUserName(data?.name ?? null))
+      }
+    })
+
     const channel = supabase
       .channel(`comments-${brief.id}`)
       .on('postgres_changes', {
@@ -84,14 +129,22 @@ export function BriefDrawer({ brief, clientColor, clientName, onClose, onMove, o
       }, () => loadComments())
       .subscribe()
     return () => { supabase.removeChannel(channel) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brief.id])
 
   useEffect(() => {
     commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [comments])
 
-  async function sendComment(e: React.FormEvent) {
-    e.preventDefault()
+  // Keyboard shortcut: Cmd/Ctrl+Enter to send
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault()
+      sendComment()
+    }
+  }
+
+  async function sendComment() {
     if (!newComment.trim()) return
     setSending(true)
     const supabase = createClient()
@@ -101,7 +154,7 @@ export function BriefDrawer({ brief, clientColor, clientName, onClose, onMove, o
       content:     newComment.trim(),
       user_id:     user?.id,
       user_email:  user?.email,
-      user_name:   user?.email?.split('@')[0] ?? 'Team',
+      user_name:   currentUserName ?? user?.email?.split('@')[0] ?? 'Team',
       is_internal: isInternal,
     })
     setNewComment('')
@@ -112,7 +165,6 @@ export function BriefDrawer({ brief, clientColor, clientName, onClose, onMove, o
   async function saveDraftUrl() {
     if (!draftUrl.trim()) return
     setSavingUrl(true)
-    // Saving a draft link automatically moves internal status to in_review
     const updates = await updateBriefStatus(brief.id, {
       draft_url: draftUrl.trim(),
       internal_status: 'in_review',
@@ -125,7 +177,6 @@ export function BriefDrawer({ brief, clientColor, clientName, onClose, onMove, o
   }
 
   async function pushToClientReview() {
-    // Atomically update both fields
     const updates = await updateBriefStatus(brief.id, {
       pipeline_status: 'client_review',
       internal_status: 'in_review',
@@ -144,360 +195,367 @@ export function BriefDrawer({ brief, clientColor, clientName, onClose, onMove, o
     onBriefUpdate?.(updates)
   }
 
-  const clientComments   = comments.filter(c => !c.is_internal)
-  const internalComments = comments.filter(c => c.is_internal)
-  const hasClientFeedback = clientComments.length > 0
-
   return (
-    <div className="fixed inset-0 z-40 flex justify-end">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+    <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative w-full max-w-xl bg-white shadow-2xl flex flex-col h-full">
+      {/* Modal */}
+      <div className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
 
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-zinc-100 flex-shrink-0">
-          <div className="flex items-start justify-between gap-3">
+        {/* ── Cover image ── */}
+        {brief.cover_url && (
+          <div className="flex-shrink-0 w-full bg-black/80 max-h-48 overflow-hidden rounded-t-2xl">
+            <img
+              src={brief.cover_url}
+              alt=""
+              className="w-full max-h-48 object-contain"
+            />
+          </div>
+        )}
+
+        {/* ── Coloured header ── */}
+        <div
+          className="flex-shrink-0 px-6 py-4"
+          style={{ backgroundColor: clientColor }}
+        >
+          <div className="flex items-start justify-between gap-4">
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-zinc-400 mb-0.5">{brief.campaign ?? 'No campaign'}</p>
-              <h2 className="font-semibold text-zinc-900 text-base leading-snug">{brief.name}</h2>
+              {brief.campaign && (
+                <p className="text-xs font-medium mb-1" style={{ color: 'rgba(255,255,255,0.7)' }}>
+                  {brief.campaign}
+                </p>
+              )}
+              <h2 className="font-bold text-white text-lg leading-snug">{brief.name}</h2>
 
-              <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                {/* Client name badge (internal mode) */}
-                {internalMode && clientName && (
-                  <span
-                    className="text-[10px] font-bold text-white rounded-full px-2 py-0.5"
-                    style={{ backgroundColor: clientColor }}
-                  >
+              {/* Badges row */}
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                {clientName && internalMode && (
+                  <span className="text-[11px] font-semibold text-white/90 bg-white/20 rounded-full px-2.5 py-0.5">
                     {clientName}
                   </span>
                 )}
                 {brief.content_type && (
-                  <span className="text-[10px] font-medium rounded-full px-2 py-0.5 bg-zinc-100 text-zinc-600">
+                  <span className="text-[11px] font-semibold text-white/90 bg-white/20 rounded-full px-2.5 py-0.5">
                     {brief.content_type}
                   </span>
                 )}
-                {/* Internal status badge */}
                 {internalMode && (
-                  <span className={`text-[10px] font-semibold rounded-full px-2 py-0.5 ${INTERNAL_STAGE_BADGES[internalStatus]}`}>
+                  <span className={`text-[11px] font-semibold rounded-full px-2.5 py-0.5 ${INTERNAL_STAGE_BADGES[internalStatus]}`}>
                     {INTERNAL_STAGES.find(s => s.key === internalStatus)?.label}
                   </span>
                 )}
-                {/* Client pipeline status badge */}
                 {internalMode && (
-                  <span className="text-[10px] font-medium rounded-full px-2 py-0.5 bg-zinc-100 text-zinc-500">
+                  <span className="text-[11px] font-medium text-white/60 bg-white/10 rounded-full px-2.5 py-0.5">
                     Client: {CLIENT_STAGE_LABELS[brief.pipeline_status] ?? brief.pipeline_status}
                   </span>
                 )}
                 {!internalMode && (
-                  <span
-                    className="text-[10px] font-semibold rounded-full px-2 py-0.5 text-white"
-                    style={{ backgroundColor: clientColor }}
-                  >
+                  <span className="text-[11px] font-semibold text-white/90 bg-white/20 rounded-full px-2.5 py-0.5">
                     {CLIENT_STAGE_LABELS[brief.pipeline_status]}
                   </span>
                 )}
               </div>
             </div>
-            <button onClick={onClose} className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 flex-shrink-0">
+
+            <button
+              onClick={onClose}
+              className="rounded-xl p-1.5 text-white/60 hover:text-white hover:bg-white/10 transition-colors flex-shrink-0"
+            >
               <X className="h-5 w-5" />
             </button>
           </div>
 
-          {/* ── INTERNAL MODE CONTROLS ── */}
+          {/* ── Internal stage stepper ── */}
           {internalMode && (
-            <div className="mt-3 space-y-2">
-
-              {/* Stage stepper */}
-              <div className="flex gap-1">
-                {INTERNAL_STAGES.map((s, i) => (
-                  <button
-                    key={s.key}
-                    onClick={() => onInternalMove?.(brief.id, s.key)}
-                    title={s.label}
-                    className={`flex-1 py-1.5 text-[9px] font-semibold rounded text-center transition-all ${
-                      internalStatus === s.key
-                        ? 'bg-zinc-900 text-white'
-                        : i < currentInternalIndex
-                        ? 'bg-zinc-200 text-zinc-500 hover:bg-zinc-300'
-                        : 'bg-zinc-100 text-zinc-400 hover:bg-zinc-200'
-                    }`}
-                  >
-                    {s.short}
-                  </button>
-                ))}
-              </div>
-
-              {/* Action buttons */}
-              {internalStatus === 'in_review' && brief.pipeline_status !== 'client_review' && brief.pipeline_status !== 'approved' && (
+            <div className="mt-3 flex gap-1">
+              {INTERNAL_STAGES.map((s, i) => (
                 <button
-                  onClick={pushToClientReview}
-                  className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:opacity-90 transition-opacity"
+                  key={s.key}
+                  onClick={() => onInternalMove?.(brief.id, s.key)}
+                  title={s.label}
+                  className={`flex-1 py-1.5 text-[10px] font-semibold rounded-lg text-center transition-all ${
+                    internalStatus === s.key
+                      ? 'bg-white text-zinc-900 shadow-sm'
+                      : i < currentInternalIndex
+                      ? 'bg-white/30 text-white hover:bg-white/40'
+                      : 'bg-white/15 text-white/70 hover:bg-white/25'
+                  }`}
                 >
-                  Push to Client Review
-                  <ArrowRight className="h-3.5 w-3.5" />
+                  {s.short}
                 </button>
-              )}
-
-              {brief.pipeline_status === 'client_review' && internalStatus !== 'approved_by_client' && (
-                <button
-                  onClick={markApprovedByClient}
-                  className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold text-white bg-green-600 hover:opacity-90 transition-opacity"
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Mark Approved by Client
-                </button>
-              )}
-
-              {/* Revision alert */}
-              {internalStatus === 'revisions_required' && hasClientFeedback && (
-                <div className="flex items-start gap-2 rounded-xl bg-red-50 border border-red-100 px-3 py-2">
-                  <AlertTriangle className="h-3.5 w-3.5 text-red-500 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-red-700">
-                    {clientComments.length} piece{clientComments.length !== 1 ? 's' : ''} of client feedback — check the Comments tab
-                  </p>
-                </div>
-              )}
+              ))}
             </div>
           )}
-
-          {/* ── CLIENT PIPELINE MODE ── */}
-          {!internalMode && nextClientStage && (
-            <button
-              onClick={() => onMove(brief.id, nextClientStage)}
-              className="mt-3 flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold text-white w-full justify-center transition-opacity hover:opacity-90"
-              style={{ backgroundColor: clientColor }}
-            >
-              Move to {CLIENT_STAGE_LABELS[nextClientStage]}
-              <ArrowRight className="h-3.5 w-3.5" />
-            </button>
-          )}
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-zinc-100 flex-shrink-0">
-          {(['brief', 'comments'] as const).map(t => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`flex-1 py-3 text-xs font-semibold capitalize transition-colors relative ${
-                tab === t ? 'border-b-2 text-zinc-900' : 'text-zinc-400 hover:text-zinc-600'
-              }`}
-              style={tab === t ? { borderColor: internalMode ? '#18181b' : clientColor } : {}}
-            >
-              {t === 'comments'
-                ? `Comments (${comments.length})`
-                : 'Brief'
-              }
-              {t === 'comments' && hasClientFeedback && internalMode && tab !== 'comments' && (
-                <span className="absolute top-2.5 right-4 h-2 w-2 rounded-full bg-blue-500" />
-              )}
-            </button>
-          ))}
-        </div>
+        {/* ── Body: two columns ── */}
+        <div className="flex flex-1 min-h-0 overflow-hidden divide-x divide-zinc-100">
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto">
+          {/* ── LEFT: Brief details ── */}
+          <div className="flex-1 overflow-y-auto p-6 space-y-5">
 
-          {/* ── BRIEF TAB ── */}
-          {tab === 'brief' && (
-            <div className="p-6 space-y-5">
-              {brief.description && (
-                <div>
-                  <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">Brief</p>
-                  <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed bg-zinc-50 rounded-xl p-4 border border-zinc-100">
-                    {brief.description}
-                  </p>
-                </div>
-              )}
-
-              {/* Draft / Review link */}
+            {/* Description */}
+            {brief.description && (
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">
-                    {internalMode ? 'Draft Link' : 'Review Link'}
-                  </p>
-                  {brief.draft_url?.includes('frame.io') && (
-                    <span className="flex items-center gap-1 text-[10px] font-semibold rounded-full bg-indigo-50 text-indigo-600 px-2 py-0.5 border border-indigo-100">
-                      <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-pulse" />
-                      Frame.io
-                    </span>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
-                    <input
-                      type="url"
-                      value={draftUrl}
-                      onChange={e => setDraftUrl(e.target.value)}
-                      placeholder="https://app.frame.io/... or drive.google.com/..."
-                      className="w-full rounded-lg border border-zinc-200 bg-zinc-50 pl-9 pr-3 py-2 text-sm text-zinc-700 focus:border-[#14C29F] focus:outline-none focus:ring-2 focus:ring-[#14C29F]/20"
-                    />
-                  </div>
-                  <button
-                    onClick={saveDraftUrl}
-                    disabled={savingUrl || !draftUrl.trim()}
-                    className="rounded-lg px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
-                    style={{ backgroundColor: internalMode ? '#18181b' : clientColor }}
-                  >
-                    {urlSaved ? '✓' : savingUrl ? '…' : 'Save'}
-                  </button>
-                </div>
-                {brief.draft_url && (
-                  <a
-                    href={brief.draft_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-2 flex items-center gap-1.5 text-xs font-medium hover:underline"
-                    style={{ color: internalMode ? '#14C29F' : clientColor }}
-                  >
-                    <ExternalLink className="h-3 w-3" />
-                    {brief.draft_url.includes('frame.io') ? 'Open in Frame.io' : 'Open draft'}
-                  </a>
-                )}
-                {internalMode && !brief.draft_url && (
-                  <p className="mt-1.5 text-[10px] text-zinc-400">
-                    Paste a Frame.io review link or any URL — or set up the webhook to auto-populate.
-                  </p>
+                <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Description</p>
+                <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed bg-zinc-50 rounded-xl p-4 border border-zinc-100">
+                  {brief.description}
+                </p>
+              </div>
+            )}
+
+            {/* Draft link */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Draft Link</p>
+                {brief.draft_url?.includes('frame.io') && (
+                  <span className="flex items-center gap-1 text-[10px] font-semibold rounded-full bg-indigo-50 text-indigo-600 px-2 py-0.5 border border-indigo-100">
+                    <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-pulse" />
+                    Frame.io
+                  </span>
                 )}
               </div>
-
-              {brief.due_date && (
-                <div>
-                  <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1">Due</p>
-                  <p className="text-sm text-zinc-700">{format(new Date(brief.due_date), 'd MMM yyyy')}</p>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
+                  <input
+                    type="url"
+                    value={draftUrl}
+                    onChange={e => setDraftUrl(e.target.value)}
+                    placeholder="https://app.frame.io/... or drive.google.com/..."
+                    className="w-full rounded-xl border border-zinc-200 bg-zinc-50 pl-9 pr-3 py-2.5 text-sm text-zinc-700 focus:border-[#14C29F] focus:outline-none focus:ring-2 focus:ring-[#14C29F]/20"
+                  />
                 </div>
+                <button
+                  onClick={saveDraftUrl}
+                  disabled={savingUrl || !draftUrl.trim()}
+                  className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white bg-zinc-900 hover:opacity-90 disabled:opacity-40 transition-opacity"
+                >
+                  {urlSaved ? '✓ Saved' : savingUrl ? '…' : 'Save'}
+                </button>
+              </div>
+              {brief.draft_url && (
+                <a
+                  href={brief.draft_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 flex items-center gap-1.5 text-xs font-medium text-[#14C29F] hover:underline"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  {brief.draft_url.includes('frame.io') ? 'Open in Frame.io' : 'Open draft'}
+                </a>
               )}
             </div>
-          )}
 
-          {/* ── COMMENTS TAB ── */}
-          {tab === 'comments' && (
-            <div className="flex flex-col h-full">
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-
-                {/* Client Feedback (non-internal) */}
-                {clientComments.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 py-1">
-                      <MessageSquare className="h-3.5 w-3.5 text-blue-500" />
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-600">Client Feedback</p>
-                    </div>
-                    {clientComments.map(c => (
-                      <CommentBubble key={c.id} comment={c} variant="client" />
-                    ))}
-                  </div>
-                )}
-
-                {/* Internal Notes */}
-                {internalComments.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 py-1">
-                      <Lock className="h-3.5 w-3.5 text-amber-500" />
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-600">Internal Notes</p>
-                    </div>
-                    {internalComments.map(c => (
-                      <CommentBubble key={c.id} comment={c} variant="internal" />
-                    ))}
-                  </div>
-                )}
-
-                {comments.length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <MessageSquare className="h-6 w-6 text-zinc-300 mb-2" />
-                    <p className="text-xs text-zinc-400">No comments yet</p>
-                  </div>
-                )}
-
-                <div ref={commentsEndRef} />
+            {/* Due date */}
+            {brief.due_date && (
+              <div>
+                <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1">Due</p>
+                <p className="text-sm text-zinc-700">{format(new Date(brief.due_date), 'd MMMM yyyy')}</p>
               </div>
+            )}
 
-              {/* Comment input */}
-              <div className="border-t border-zinc-100 p-4 flex-shrink-0">
-                <div className="flex items-center gap-2 mb-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsInternal(false)}
-                    className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-all ${
-                      !isInternal ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-zinc-200 text-zinc-400'
-                    }`}
-                  >
-                    <MessageSquare className="h-3 w-3" />
-                    Client visible
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsInternal(true)}
-                    className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-all ${
-                      isInternal ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-white border-zinc-200 text-zinc-400'
-                    }`}
-                  >
-                    <Lock className="h-3 w-3" />
-                    Internal only
-                  </button>
-                </div>
+            {/* ── Internal action buttons ── */}
+            {internalMode && (
+              <div className="space-y-2 pt-1">
 
-                <form onSubmit={sendComment} className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newComment}
-                    onChange={e => setNewComment(e.target.value)}
-                    placeholder={isInternal ? 'Internal note — not visible to client…' : 'Visible to client…'}
-                    className={`flex-1 rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
-                      isInternal
-                        ? 'border-amber-200 bg-amber-50 focus:border-amber-400 focus:ring-amber-100 placeholder-amber-300'
-                        : 'border-zinc-200 bg-zinc-50 focus:border-[#14C29F] focus:ring-[#14C29F]/20'
-                    }`}
-                  />
+                {/* Revision alert */}
+                {internalStatus === 'revisions_required' && hasClientFeedback && (
+                  <div className="flex items-start gap-2 rounded-xl bg-red-50 border border-red-100 px-3 py-2.5">
+                    <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
+                    <p className="text-xs text-red-700">
+                      {clientComments.length} piece{clientComments.length !== 1 ? 's' : ''} of client feedback — see comments
+                    </p>
+                  </div>
+                )}
+
+                {/* Push to client review */}
+                {internalStatus === 'in_review' && brief.pipeline_status !== 'client_review' && brief.pipeline_status !== 'approved' && (
                   <button
-                    type="submit"
-                    disabled={sending || !newComment.trim()}
-                    className="rounded-xl px-3 py-2 text-white disabled:opacity-50 transition-opacity"
-                    style={{ backgroundColor: isInternal ? '#F59E0B' : (internalMode ? '#14C29F' : clientColor) }}
+                    onClick={pushToClientReview}
+                    className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:opacity-90 transition-opacity"
                   >
-                    <Send className="h-4 w-4" />
+                    Push to Client Review
+                    <ArrowRight className="h-4 w-4" />
                   </button>
-                </form>
-                {isInternal && (
-                  <p className="text-[10px] text-amber-500 mt-1.5 flex items-center gap-1">
-                    <Lock className="h-3 w-3" /> Only the SwipeUp team can see this
-                  </p>
+                )}
+
+                {/* Mark approved */}
+                {brief.pipeline_status === 'client_review' && internalStatus !== 'approved_by_client' && (
+                  <button
+                    onClick={markApprovedByClient}
+                    className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white bg-emerald-600 hover:opacity-90 transition-opacity"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    Mark Approved by Client
+                  </button>
+                )}
+
+                {/* Client pipeline advance (non-internal stages) */}
+                {!internalMode && nextClientStage && (
+                  <button
+                    onClick={() => onMove(brief.id, nextClientStage)}
+                    className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                    style={{ backgroundColor: clientColor }}
+                  >
+                    Move to {CLIENT_STAGE_LABELS[nextClientStage]}
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
                 )}
               </div>
+            )}
+          </div>
+
+          {/* ── RIGHT: Comments ── */}
+          <div className="w-80 flex flex-col flex-shrink-0 bg-white">
+
+            {/* Comments header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-3.5 w-3.5 text-zinc-400" />
+                <span className="text-xs font-semibold text-zinc-600">
+                  Comments {comments.length > 0 && `(${comments.length})`}
+                </span>
+              </div>
+              {hasClientFeedback && (
+                <span className="h-2 w-2 rounded-full bg-blue-500 flex-shrink-0" />
+              )}
             </div>
-          )}
+
+            {/* Comment list */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+
+              {/* Client feedback */}
+              {clientComments.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <MessageSquare className="h-3 w-3 text-blue-400" />
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-500">Client Feedback</p>
+                  </div>
+                  {clientComments.map(c => (
+                    <CommentBubble key={c.id} comment={c} variant="client" />
+                  ))}
+                </div>
+              )}
+
+              {/* Internal notes */}
+              {internalComments.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <Lock className="h-3 w-3 text-amber-500" />
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-600">Internal Notes</p>
+                  </div>
+                  {internalComments.map(c => (
+                    <CommentBubble key={c.id} comment={c} variant="internal" />
+                  ))}
+                </div>
+              )}
+
+              {comments.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <MessageSquare className="h-7 w-7 text-zinc-200 mb-2" />
+                  <p className="text-xs text-zinc-400 font-medium">No comments yet</p>
+                  <p className="text-[11px] text-zinc-300 mt-0.5">Be the first to add a note</p>
+                </div>
+              )}
+
+              <div ref={commentsEndRef} />
+            </div>
+
+            {/* Comment input */}
+            <div className="border-t border-zinc-100 p-3 flex-shrink-0 space-y-2.5">
+
+              {/* Internal / client visible toggle */}
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setIsInternal(false)}
+                  className={`flex items-center gap-1.5 flex-1 justify-center rounded-lg px-2 py-1.5 text-[11px] font-semibold border transition-all ${
+                    !isInternal ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-zinc-200 text-zinc-400 hover:border-zinc-300'
+                  }`}
+                >
+                  <MessageSquare className="h-3 w-3" />
+                  Client visible
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsInternal(true)}
+                  className={`flex items-center gap-1.5 flex-1 justify-center rounded-lg px-2 py-1.5 text-[11px] font-semibold border transition-all ${
+                    isInternal ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-white border-zinc-200 text-zinc-400 hover:border-zinc-300'
+                  }`}
+                >
+                  <Lock className="h-3 w-3" />
+                  Internal only
+                </button>
+              </div>
+
+              {/* Input + send */}
+              <div className="flex items-end gap-2">
+                <textarea
+                  ref={textareaRef}
+                  rows={2}
+                  value={newComment}
+                  onChange={e => setNewComment(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={isInternal ? 'Internal note…' : 'Write a comment…'}
+                  className={`flex-1 rounded-xl border px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 ${
+                    isInternal
+                      ? 'border-amber-200 bg-amber-50 focus:border-amber-400 focus:ring-amber-100 placeholder-amber-300'
+                      : 'border-zinc-200 bg-zinc-50 focus:border-[#14C29F] focus:ring-[#14C29F]/20'
+                  }`}
+                />
+                <button
+                  onClick={sendComment}
+                  disabled={sending || !newComment.trim()}
+                  className="rounded-xl p-2.5 text-white disabled:opacity-40 transition-opacity flex-shrink-0"
+                  style={{ backgroundColor: isInternal ? '#F59E0B' : '#14C29F' }}
+                >
+                  <Send className="h-4 w-4" />
+                </button>
+              </div>
+
+              {isInternal ? (
+                <p className="text-[10px] text-amber-500 flex items-center gap-1">
+                  <Lock className="h-2.5 w-2.5" /> Only the SwipeUp team can see this
+                </p>
+              ) : (
+                <p className="text-[10px] text-zinc-400">⌘↵ to send</p>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
   )
 }
 
+// ─── Comment Bubble ───────────────────────────────────────────────────────────
+
 function CommentBubble({ comment, variant }: { comment: Comment; variant: 'client' | 'internal' }) {
-  const styles = {
-    client:   'bg-blue-50 border-blue-100',
-    internal: 'bg-amber-50 border-amber-100',
-  }
-  const nameStyles = {
-    client:   'text-blue-700',
-    internal: 'text-amber-700',
-  }
-  const textStyles = {
-    client:   'text-blue-800',
-    internal: 'text-amber-800',
-  }
+  const bg      = variant === 'client'   ? 'bg-blue-50 border-blue-100'   : 'bg-amber-50 border-amber-100'
+  const nameCol = variant === 'client'   ? 'text-blue-700'                : 'text-amber-700'
+  const textCol = variant === 'client'   ? 'text-blue-800'                : 'text-amber-800'
+  const name    = comment.user_name ?? comment.user_email?.split('@')[0] ?? 'Unknown'
 
   return (
-    <div className={`rounded-xl p-3 text-sm border ${styles[variant]}`}>
-      <div className="flex items-center justify-between gap-2 mb-1">
-        <span className={`text-[11px] font-semibold ${nameStyles[variant]}`}>
-          {comment.user_name || comment.user_email?.split('@')[0] || 'Unknown'}
-          {variant === 'internal' && <span className="ml-1 opacity-60">(internal)</span>}
-        </span>
-        <span className="text-[10px] text-zinc-400">
+    <div className={`rounded-xl p-3 border ${bg}`}>
+      <div className="flex items-center gap-2 mb-1.5">
+        {/* Avatar */}
+        <div
+          className="h-6 w-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0"
+          style={{
+            backgroundColor: variant === 'client' ? '#3b82f6' : '#f59e0b',
+          }}
+        >
+          {name.slice(0, 2).toUpperCase()}
+        </div>
+        <span className={`text-[11px] font-semibold ${nameCol} flex-1`}>{name}</span>
+        <span className="text-[10px] text-zinc-400 flex-shrink-0">
           {format(new Date(comment.created_at), 'd MMM · h:mm a')}
         </span>
       </div>
-      <p className={`text-xs leading-relaxed ${textStyles[variant]}`}>{comment.content}</p>
+      <p className={`text-xs leading-relaxed ${textCol} pl-8`}>{comment.content}</p>
     </div>
   )
 }
