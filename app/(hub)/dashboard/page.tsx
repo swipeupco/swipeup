@@ -5,7 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import {
   AlertTriangle, CheckCircle2, Clock, Users,
-  ArrowRight, MessageSquare, TrendingUp,
+  ArrowRight, MessageSquare, TrendingUp, ExternalLink,
+  Eye, Loader2, Send,
 } from 'lucide-react'
 import { format, startOfMonth, isAfter } from 'date-fns'
 
@@ -31,14 +32,25 @@ interface Comment {
 }
 
 export default function Dashboard() {
-  const [briefs, setBriefs]     = useState<Brief[]>([])
-  const [comments, setComments] = useState<Comment[]>([])
-  const [loading, setLoading]   = useState(true)
+  const [briefs, setBriefs]             = useState<Brief[]>([])
+  const [comments, setComments]         = useState<Comment[]>([])
+  const [readyToReview, setReadyToReview] = useState<Brief[]>([])
+  const [loading, setLoading]           = useState(true)
+  const [isAdmin, setIsAdmin]           = useState(false)
+  const [pushing, setPushing]           = useState<string | null>(null)
   const router = useRouter()
 
   useEffect(() => {
     async function load() {
       const supabase = createClient()
+
+      // Check admin status
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles').select('is_admin').eq('id', user.id).single()
+        setIsAdmin(profile?.is_admin ?? false)
+      }
 
       const { data: briefData } = await supabase
         .from('briefs')
@@ -52,12 +64,32 @@ export default function Dashboard() {
         .order('created_at', { ascending: false })
         .limit(50)
 
+      // Ready to review = draft link saved, awaiting admin feedback or push to client
+      const { data: rtrData } = await supabase
+        .from('briefs')
+        .select('*, clients(name, color, slug)')
+        .eq('internal_status', 'in_review')
+        .not('draft_url', 'is', null)
+        .order('updated_at', { ascending: false })
+
       setBriefs((briefData as unknown as Brief[]) ?? [])
       setComments((commentData as unknown as Comment[]) ?? [])
+      setReadyToReview((rtrData as unknown as Brief[]) ?? [])
       setLoading(false)
     }
     load()
   }, [])
+
+  async function pushToClient(brief: Brief) {
+    setPushing(brief.id)
+    const supabase = createClient()
+    await supabase.from('briefs').update({
+      pipeline_status: 'client_review',
+      internal_status: 'in_review',
+    }).eq('id', brief.id)
+    setReadyToReview(prev => prev.filter(b => b.id !== brief.id))
+    setPushing(null)
+  }
 
   if (loading) {
     return (
@@ -67,17 +99,18 @@ export default function Dashboard() {
     )
   }
 
-  const monthStart   = startOfMonth(new Date())
-  const active       = briefs.filter(b => b.pipeline_status !== 'approved')
-  const revisions    = briefs.filter(b => b.internal_status === 'revisions_required')
-  const withClient   = briefs.filter(b => b.pipeline_status === 'client_review')
-  const approvedMonth = briefs.filter(b => b.pipeline_status === 'approved' && isAfter(new Date(b.created_at), monthStart))
+  const monthStart    = startOfMonth(new Date())
+  const active        = briefs.filter(b => b.pipeline_status !== 'approved')
+  const revisions     = briefs.filter(b => b.internal_status === 'revisions_required')
+  const withClient    = briefs.filter(b => b.pipeline_status === 'client_review')
+  const approvedMonth = briefs.filter(b =>
+    b.pipeline_status === 'approved' && isAfter(new Date(b.created_at), monthStart)
+  )
 
-  // Recent client feedback (last 5 unique briefs with comments)
   const recentFeedbackBriefIds = [...new Set(comments.map(c => c.brief_id))].slice(0, 5)
   const recentFeedback: { brief: Brief; comment: Comment }[] = recentFeedbackBriefIds.reduce(
     (acc, id) => {
-      const brief = briefs.find(b => b.id === id)
+      const brief  = briefs.find(b => b.id === id)
       const latest = comments.find(c => c.brief_id === id)
       if (brief && latest) acc.push({ brief, comment: latest })
       return acc
@@ -95,6 +128,15 @@ export default function Dashboard() {
       border: 'border-blue-100',
     },
     {
+      label: 'Ready to Review',
+      value: readyToReview.length,
+      icon: Eye,
+      bg: readyToReview.length > 0 ? 'bg-indigo-50' : 'bg-zinc-50',
+      iconColor: readyToReview.length > 0 ? 'text-indigo-500' : 'text-zinc-400',
+      border: readyToReview.length > 0 ? 'border-indigo-200' : 'border-zinc-200',
+      highlight: readyToReview.length > 0,
+    },
+    {
       label: 'Needs Revisions',
       value: revisions.length,
       icon: AlertTriangle,
@@ -102,14 +144,6 @@ export default function Dashboard() {
       iconColor: revisions.length > 0 ? 'text-red-500' : 'text-zinc-400',
       border: revisions.length > 0 ? 'border-red-100' : 'border-zinc-200',
       urgent: revisions.length > 0,
-    },
-    {
-      label: 'With Client',
-      value: withClient.length,
-      icon: Clock,
-      bg: 'bg-amber-50',
-      iconColor: 'text-amber-500',
-      border: 'border-amber-100',
     },
     {
       label: 'Approved This Month',
@@ -123,6 +157,7 @@ export default function Dashboard() {
 
   return (
     <div className="p-8 max-w-5xl space-y-8">
+
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-zinc-900">Dashboard</h1>
@@ -136,15 +171,105 @@ export default function Dashboard() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">{m.label}</p>
-                <p className={`text-3xl font-black mt-1 ${m.urgent ? 'text-red-600' : 'text-zinc-900'}`}>{m.value}</p>
+                <p className={`text-3xl font-black mt-1 ${'urgent' in m && m.urgent ? 'text-red-600' : 'highlight' in m && m.highlight ? 'text-indigo-600' : 'text-zinc-900'}`}>
+                  {m.value}
+                </p>
               </div>
-              <div className={`h-8 w-8 rounded-xl flex items-center justify-center bg-white/70`}>
+              <div className="h-8 w-8 rounded-xl flex items-center justify-center bg-white/70">
                 <m.icon className={`h-4 w-4 ${m.iconColor}`} />
               </div>
             </div>
           </div>
         ))}
       </div>
+
+      {/* ── Ready to Review (admin only) ── */}
+      {isAdmin && (
+        <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-indigo-50">
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-indigo-400 animate-pulse" />
+              <h2 className="text-sm font-semibold text-zinc-900">Ready to Review</h2>
+              {readyToReview.length > 0 && (
+                <span className="text-xs font-semibold text-white bg-indigo-500 rounded-full px-2 py-0.5">
+                  {readyToReview.length}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-zinc-400">Drafts awaiting your review before sending to clients</p>
+          </div>
+
+          {readyToReview.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 gap-2">
+              <CheckCircle2 className="h-6 w-6 text-zinc-300" />
+              <p className="text-sm text-zinc-400">No drafts waiting for review</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-zinc-50">
+              {readyToReview.map(brief => (
+                <div key={brief.id} className="flex items-center gap-4 px-5 py-4">
+
+                  {/* Client badge */}
+                  <div
+                    className="h-8 w-8 rounded-xl flex items-center justify-center text-white font-bold text-xs flex-shrink-0"
+                    style={{ backgroundColor: brief.clients?.color ?? '#6366f1' }}
+                  >
+                    {(brief.clients?.name ?? '?').slice(0, 2).toUpperCase()}
+                  </div>
+
+                  {/* Brief info */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-zinc-800 truncate">{brief.name}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {brief.clients && (
+                        <span className="text-[11px] font-semibold" style={{ color: brief.clients.color }}>
+                          {brief.clients.name}
+                        </span>
+                      )}
+                      {brief.campaign && (
+                        <span className="text-[11px] text-zinc-400">· {brief.campaign}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {brief.draft_url && (
+                      <a
+                        href={brief.draft_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:border-zinc-300 hover:text-zinc-800 transition-colors"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        View draft
+                      </a>
+                    )}
+                    <button
+                      onClick={() => router.push(`/pipeline/${brief.clients?.slug}`)}
+                      className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:border-zinc-300 hover:text-zinc-800 transition-colors"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      Feedback
+                    </button>
+                    <button
+                      onClick={() => pushToClient(brief)}
+                      disabled={pushing === brief.id}
+                      className="flex items-center gap-1.5 rounded-lg bg-[#14C29F] hover:opacity-90 px-3 py-1.5 text-xs font-semibold text-white transition-opacity disabled:opacity-60"
+                    >
+                      {pushing === brief.id
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Send className="h-3.5 w-3.5" />
+                      }
+                      Send to client
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
 
@@ -266,10 +391,10 @@ export default function Dashboard() {
                   <p className="text-sm font-semibold text-zinc-800">{c.name}</p>
                   <div className="flex gap-3 mt-1 flex-wrap">
                     {[
-                      { key: 'in_production', label: 'In Prod', color: 'text-amber-600' },
-                      { key: 'revisions_required', label: 'Revisions', color: 'text-red-600' },
-                      { key: 'ready_for_review', label: 'Ready', color: 'text-blue-600' },
-                      { key: 'approved_by_client', label: 'Approved', color: 'text-green-600' },
+                      { key: 'in_production',      label: 'In Prod',    color: 'text-blue-600' },
+                      { key: 'in_review',           label: 'In Review',  color: 'text-indigo-600' },
+                      { key: 'revisions_required',  label: 'Revisions',  color: 'text-red-600' },
+                      { key: 'approved_by_client',  label: 'Approved',   color: 'text-green-600' },
                     ].map(s => (
                       <span key={s.key} className={`text-[11px] font-medium ${s.color}`}>
                         {s.label} <span className="font-bold">{c.counts[s.key] ?? 0}</span>
@@ -283,6 +408,7 @@ export default function Dashboard() {
           })()}
         </div>
       </div>
+
     </div>
   )
 }

@@ -85,9 +85,8 @@ export function BriefDrawer({
   const commentsEndRef = useRef<HTMLDivElement>(null)
   const textareaRef    = useRef<HTMLTextAreaElement>(null)
 
-  const internalStatus       = brief.internal_status ?? 'in_production'
-  const currentInternalIndex = INTERNAL_STAGES.findIndex(s => s.key === internalStatus)
-  const clientIndex          = CLIENT_STAGE_KEYS.indexOf(brief.pipeline_status)
+  const internalStatus  = brief.internal_status ?? 'in_production'
+  const clientIndex     = CLIENT_STAGE_KEYS.indexOf(brief.pipeline_status)
   const nextClientStage      = clientIndex < CLIENT_STAGE_KEYS.length - 1 ? CLIENT_STAGE_KEYS[clientIndex + 1] : null
 
   const clientComments   = comments.filter(c => !c.is_internal)
@@ -201,7 +200,7 @@ export function BriefDrawer({
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+      <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden">
 
         {/* ── Cover image ── */}
         {brief.cover_url && (
@@ -266,34 +265,13 @@ export function BriefDrawer({
             </button>
           </div>
 
-          {/* ── Internal stage stepper ── */}
-          {internalMode && (
-            <div className="mt-3 flex gap-1">
-              {INTERNAL_STAGES.map((s, i) => (
-                <button
-                  key={s.key}
-                  onClick={() => onInternalMove?.(brief.id, s.key)}
-                  title={s.label}
-                  className={`flex-1 py-1.5 text-[10px] font-semibold rounded-lg text-center transition-all ${
-                    internalStatus === s.key
-                      ? 'bg-white text-zinc-900 shadow-sm'
-                      : i < currentInternalIndex
-                      ? 'bg-white/30 text-white hover:bg-white/40'
-                      : 'bg-white/15 text-white/70 hover:bg-white/25'
-                  }`}
-                >
-                  {s.short}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* ── Body: two columns ── */}
         <div className="flex flex-1 min-h-0 overflow-hidden divide-x divide-zinc-100">
 
           {/* ── LEFT: Brief details ── */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          <div className="flex-1 overflow-y-auto p-7 space-y-5">
 
             {/* Description */}
             {brief.description && (
@@ -408,7 +386,7 @@ export function BriefDrawer({
           </div>
 
           {/* ── RIGHT: Comments ── */}
-          <div className="w-80 flex flex-col flex-shrink-0 bg-white">
+          <div className="w-72 flex flex-col flex-shrink-0 bg-white">
 
             {/* Comments header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100 flex-shrink-0">
