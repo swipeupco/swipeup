@@ -20,6 +20,7 @@ interface Brief {
   campaign: string | null
   content_type: string | null
   pipeline_status: string
+  internal_status: string | null
   draft_url: string | null
   due_date: string | null
   client_id: string
