@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { LayoutGrid, LogOut, Kanban, LayoutDashboard } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { NotificationBell } from './NotificationBell'
 
 const nav = [
   { href: '/dashboard', label: 'Dashboard',          icon: LayoutDashboard },
@@ -29,11 +30,14 @@ export function Sidebar() {
   return (
     <aside className="fixed inset-y-0 left-0 z-30 flex w-56 flex-col bg-zinc-950 border-r border-zinc-800 text-white">
       {/* Logo */}
-      <div className="flex items-center px-5 py-5 border-b border-zinc-800">
-        <span className="text-xl font-black tracking-tight text-white">
-          SwipeUp<span className="text-[#14C29F]">.</span>
-        </span>
-        <span className="ml-2 text-[10px] font-semibold uppercase tracking-widest text-zinc-500 mt-0.5">Hub</span>
+      <div className="flex items-center justify-between px-4 py-4 border-b border-zinc-800">
+        <div className="flex items-center">
+          <span className="text-xl font-black tracking-tight text-white">
+            SwipeUp<span className="text-[#14C29F]">.</span>
+          </span>
+          <span className="ml-2 text-[10px] font-semibold uppercase tracking-widest text-zinc-500 mt-0.5">Hub</span>
+        </div>
+        <NotificationBell />
       </div>
 
       {/* Nav */}
