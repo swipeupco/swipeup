@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import {
   Video, Image, Mail, LayoutGrid, Mic, FileText, CircleDot,
-  User, Loader2, X, Check, ChevronDown, ExternalLink, Clock, AlertTriangle,
+  User, Loader2, X, Check, ChevronDown, ExternalLink, Clock, AlertTriangle, ArrowRight,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { format } from 'date-fns'
@@ -227,14 +227,16 @@ function ClientAssignmentPanel({ clients, staff, assignments, onSet }: {
 
 // ─── Pipeline Card ────────────────────────────────────────────────────────────
 
-function PipelineCard({ brief, staff, isAdmin, onClick, onAssign }: {
+function PipelineCard({ brief, staff, isAdmin, onClick, onAssign, onPushToClient }: {
   brief: PipelineBrief
   staff: StaffMember[]
   isAdmin: boolean
   onClick: () => void
   onAssign: (userId: string | null) => void
+  onPushToClient: () => void
 }) {
   const typeInfo = CONTENT_TYPES.find(t => t.id === brief.content_type)
+  const alreadySent = brief.pipeline_status === 'client_review' || brief.pipeline_status === 'approved'
 
   return (
     <div
@@ -282,27 +284,52 @@ function PipelineCard({ brief, staff, isAdmin, onClick, onAssign }: {
         {/* Brief name */}
         <p className="text-xs font-semibold text-zinc-800 leading-snug mb-2">{brief.name}</p>
 
-        {/* Footer: due date + draft link */}
-        <div className="flex items-center justify-between gap-2">
-          {brief.due_date ? (
-            <span className="flex items-center gap-1 text-[10px] text-zinc-400">
-              <Clock className="h-2.5 w-2.5" />
-              {format(new Date(brief.due_date), 'd MMM')}
-            </span>
-          ) : <span />}
-          {brief.draft_url && (
+        {/* Due date */}
+        {brief.due_date && (
+          <span className="flex items-center gap-1 text-[10px] text-zinc-400 mb-2">
+            <Clock className="h-2.5 w-2.5" />
+            {format(new Date(brief.due_date), 'd MMM')}
+          </span>
+        )}
+
+        {/* View draft + Push to client buttons */}
+        {!alreadySent && (
+          <div className="flex gap-1.5 mt-1" onClick={e => e.stopPropagation()}>
+            <a
+              href={brief.draft_url ?? '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => { if (!brief.draft_url) e.preventDefault() }}
+              className={`flex-1 flex items-center justify-center gap-1 rounded-lg py-1.5 text-[11px] font-semibold text-white bg-blue-500 hover:opacity-90 transition-opacity ${!brief.draft_url ? 'opacity-30 pointer-events-none' : ''}`}
+            >
+              <ExternalLink className="h-3 w-3" />
+              View draft
+            </a>
+            <button
+              onClick={e => { e.stopPropagation(); onPushToClient() }}
+              disabled={!brief.draft_url}
+              className="flex-1 flex items-center justify-center gap-1 rounded-lg py-1.5 text-[11px] font-semibold text-white bg-emerald-500 hover:opacity-90 disabled:opacity-30 transition-opacity"
+            >
+              Push to client
+              <ArrowRight className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+
+        {/* Sent / approved state */}
+        {alreadySent && brief.draft_url && (
+          <div className="flex gap-1.5 mt-1" onClick={e => e.stopPropagation()}>
             <a
               href={brief.draft_url}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={e => e.stopPropagation()}
-              className="flex items-center gap-1 text-[10px] font-semibold text-[#14C29F] hover:text-[#0fa880] transition-colors"
+              className="flex-1 flex items-center justify-center gap-1 rounded-lg py-1.5 text-[11px] font-semibold text-white bg-blue-500 hover:opacity-90 transition-opacity"
             >
-              <ExternalLink className="h-2.5 w-2.5" />
+              <ExternalLink className="h-3 w-3" />
               View draft
             </a>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -428,6 +455,18 @@ export default function InternalPipeline() {
     } : b))
   }
 
+  async function pushBriefToClient(briefId: string) {
+    const supabase = createClient()
+    await supabase.from('briefs').update({
+      pipeline_status: 'client_review',
+      internal_status: 'in_review',
+    }).eq('id', briefId)
+    setBriefs(prev => prev.map(b => b.id === briefId
+      ? { ...b, pipeline_status: 'client_review', internal_status: 'in_review' }
+      : b
+    ))
+  }
+
   async function setClientDefault(clientId: string, userId: string | null) {
     const supabase = createClient()
     if (!userId) {
@@ -545,6 +584,7 @@ export default function InternalPipeline() {
                   isAdmin={isAdmin}
                   onClick={() => setSelected(brief)}
                   onAssign={uid => assignBrief(brief.id, uid)}
+                  onPushToClient={() => pushBriefToClient(brief.id)}
                 />
               ))}
               {byStage[stage.key].length === 0 && (

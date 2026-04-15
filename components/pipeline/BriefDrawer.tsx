@@ -344,7 +344,7 @@ export function BriefDrawer({
                   </div>
                 )}
 
-                {/* Push to client — always visible until sent/approved */}
+                {/* View draft + Push to client */}
                 {brief.pipeline_status !== 'client_review' && brief.pipeline_status !== 'approved' && (
                   <div className="flex gap-2 pt-1">
                     <a
@@ -352,7 +352,7 @@ export function BriefDrawer({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={e => { if (!brief.draft_url) e.preventDefault() }}
-                      className={`flex-1 flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white bg-blue-500 hover:opacity-90 transition-opacity ${!brief.draft_url ? 'opacity-40 pointer-events-none' : ''}`}
+                      className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-white bg-blue-500 hover:opacity-90 transition-opacity ${!brief.draft_url ? 'opacity-30 pointer-events-none' : ''}`}
                     >
                       <ExternalLink className="h-4 w-4" />
                       View draft
@@ -360,7 +360,7 @@ export function BriefDrawer({
                     <button
                       onClick={pushToClientReview}
                       disabled={!brief.draft_url}
-                      className="flex-1 flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white bg-emerald-500 hover:opacity-90 disabled:opacity-40 transition-opacity"
+                      className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-white bg-emerald-500 hover:opacity-90 disabled:opacity-30 transition-opacity"
                     >
                       Push to client
                       <ArrowRight className="h-4 w-4" />
