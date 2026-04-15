@@ -28,9 +28,7 @@ interface Brief {
 
 import { CLIENT_STAGES as STAGES, CLIENT_STAGE_LABELS } from '@/lib/pipeline/stages'
 
-const CLIENT_URLS: Record<string, string> = {
-  otrv: 'https://offtrackrvhub.vercel.app',
-}
+const CLIENT_PORTAL_URL = process.env.NEXT_PUBLIC_CLIENT_URL ?? 'https://offtrackrvhub.vercel.app'
 
 export default function ClientPipeline({ params }: { params: Promise<{ clientSlug: string }> }) {
   const { clientSlug } = use(params)
@@ -93,7 +91,7 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
     return <div className="p-8 text-zinc-500">Client not found.</div>
   }
 
-  const clientUrl = CLIENT_URLS[client.slug]
+  const clientUrl = CLIENT_PORTAL_URL
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
