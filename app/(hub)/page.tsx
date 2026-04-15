@@ -284,7 +284,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
     setSlug(slugify(val))
   }
 
-  async function createClient() {
+  async function saveNewClient() {
     if (!name.trim() || !slug.trim()) return
     setSavingClient(true)
     const supabase = createClient()
@@ -456,7 +456,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
               </div>
 
               <button
-                onClick={createClient}
+                onClick={saveNewClient}
                 disabled={savingClient || !name.trim() || !slug.trim()}
                 className="w-full rounded-xl py-2.5 text-sm font-semibold text-white bg-[#14C29F] disabled:opacity-50 hover:opacity-90 transition-opacity"
               >
