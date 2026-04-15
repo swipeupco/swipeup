@@ -8,6 +8,7 @@ import {
   CheckCircle2, Mail, Store, Truck,
   Palette, Upload, Copy, Check, UserPlus, Users,
   KeyRound, Trash2, ExternalLink, ChevronDown,
+  ShieldCheck, UserCog,
 } from 'lucide-react'
 
 interface Client {
@@ -30,6 +31,13 @@ interface ClientUser {
   id: string
   name: string | null
   email: string | null
+}
+
+interface StaffMember {
+  id: string
+  name: string | null
+  email: string | null
+  clientIds: string[]
 }
 
 const STAGES = [
@@ -71,6 +79,13 @@ export default function ClientsOverview() {
   const [removingId, setRemovingId]     = useState<string | null>(null)
   const [impersonating, setImpersonating] = useState<string | null>(null)
   const [resetDone, setResetDone]       = useState<string | null>(null)
+
+  // Staff access
+  const [accessOpen, setAccessOpen]     = useState<string | null>(null)
+  const [staff, setStaff]               = useState<StaffMember[]>([])
+  const [staffLoaded, setStaffLoaded]   = useState(false)
+  const [togglingAccess, setTogglingAccess] = useState<string | null>(null)
+  const [showInviteStaff, setShowInviteStaff] = useState(false)
 
   const router = useRouter()
 
@@ -157,6 +172,40 @@ export default function ClientsOverview() {
     setClients(prev => prev.map(c => c.id === clientId ? { ...c, ...updates } : c))
   }
 
+  async function loadStaff() {
+    if (staffLoaded) return
+    const res = await fetch('/api/staff-access')
+    const json = await res.json()
+    setStaff(json.staff ?? [])
+    setStaffLoaded(true)
+  }
+
+  async function toggleAccess(clientId: string) {
+    if (accessOpen === clientId) { setAccessOpen(null); return }
+    await loadStaff()
+    setAccessOpen(clientId)
+    setUsersOpen(null)
+    setBrandingOpen(null)
+  }
+
+  async function handleToggleAccess(staffId: string, clientId: string, hasAccess: boolean) {
+    setTogglingAccess(staffId + clientId)
+    const method = hasAccess ? 'DELETE' : 'POST'
+    await fetch('/api/staff-access', {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ staffId, clientId }),
+    })
+    setStaff(prev => prev.map(s => {
+      if (s.id !== staffId) return s
+      const clientIds = hasAccess
+        ? s.clientIds.filter(id => id !== clientId)
+        : [...s.clientIds, clientId]
+      return { ...s, clientIds }
+    }))
+    setTogglingAccess(null)
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -190,6 +239,7 @@ export default function ClientsOverview() {
           const users = clientUsers[client.id] ?? []
           const isUsersOpen = usersOpen === client.id
           const isBrandingOpen = brandingOpen === client.id
+          const isAccessOpen = accessOpen === client.id
 
           return (
             <div key={client.id} className="bg-white rounded-2xl border border-zinc-200 overflow-hidden">
@@ -261,7 +311,7 @@ export default function ClientsOverview() {
                     }
                   </button>
                   <button
-                    onClick={() => { setBrandingOpen(isBrandingOpen ? null : client.id); setUsersOpen(null) }}
+                    onClick={() => { setBrandingOpen(isBrandingOpen ? null : client.id); setUsersOpen(null); setAccessOpen(null) }}
                     className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
                       isBrandingOpen ? 'bg-zinc-900 text-white' : 'text-zinc-500 hover:bg-zinc-50 border border-zinc-200'
                     }`}
@@ -269,6 +319,16 @@ export default function ClientsOverview() {
                     <Palette className="h-3 w-3" />
                     Branding
                     <ChevronDown className={`h-3 w-3 transition-transform ${isBrandingOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  <button
+                    onClick={() => { toggleAccess(client.id); setBrandingOpen(null) }}
+                    className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                      isAccessOpen ? 'bg-zinc-900 text-white' : 'text-zinc-500 hover:bg-zinc-50 border border-zinc-200'
+                    }`}
+                  >
+                    <ShieldCheck className="h-3 w-3" />
+                    Team Access
+                    <ChevronDown className={`h-3 w-3 transition-transform ${isAccessOpen ? 'rotate-180' : ''}`} />
                   </button>
                 </div>
               </div>
@@ -355,6 +415,66 @@ export default function ClientsOverview() {
                   onClose={() => setBrandingOpen(null)}
                 />
               )}
+
+              {/* Team Access panel */}
+              {isAccessOpen && (
+                <div className="border-t border-zinc-100 bg-zinc-50 px-5 py-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Team Access</p>
+                      <p className="text-[11px] text-zinc-400 mt-0.5">Control which SwipeUp editors can access this portal</p>
+                    </div>
+                    <button
+                      onClick={() => setShowInviteStaff(true)}
+                      className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white bg-[#14C29F] hover:opacity-90 transition-opacity"
+                    >
+                      <UserPlus className="h-3 w-3" />
+                      Add Editor
+                    </button>
+                  </div>
+                  {staff.length === 0 ? (
+                    <div className="text-center py-6 rounded-xl border border-dashed border-zinc-200 bg-white">
+                      <UserCog className="h-6 w-6 text-zinc-300 mx-auto mb-2" />
+                      <p className="text-xs text-zinc-400">No team members yet</p>
+                      <p className="text-[10px] text-zinc-300 mt-0.5">Add an editor to grant portal access</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {staff.map(member => {
+                        const hasAccess = member.clientIds.includes(client.id)
+                        const toggling = togglingAccess === member.id + client.id
+                        return (
+                          <div key={member.id} className="flex items-center gap-3 bg-white rounded-xl px-4 py-3 border border-zinc-100">
+                            <div className="h-8 w-8 rounded-full bg-zinc-200 flex items-center justify-center text-xs font-bold text-zinc-600 flex-shrink-0">
+                              {(member.name ?? member.email ?? '?').slice(0, 1).toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-zinc-800 truncate">{member.name ?? '—'}</p>
+                              <p className="text-xs text-zinc-400 truncate">{member.email}</p>
+                            </div>
+                            <button
+                              onClick={() => handleToggleAccess(member.id, client.id, hasAccess)}
+                              disabled={toggling}
+                              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-50 ${
+                                hasAccess
+                                  ? 'bg-green-100 text-green-700 hover:bg-red-50 hover:text-red-600'
+                                  : 'bg-zinc-100 text-zinc-500 hover:bg-green-50 hover:text-green-700'
+                              }`}
+                            >
+                              {toggling
+                                ? <Loader2 className="h-3 w-3 animate-spin" />
+                                : hasAccess
+                                  ? <><Check className="h-3 w-3" /> Access granted</>
+                                  : <>+ Grant access</>
+                              }
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )
         })}
@@ -371,6 +491,15 @@ export default function ClientsOverview() {
             setClientUsers(prev => { const n = { ...prev }; delete n[inviteTarget.id]; return n })
             if (usersOpen === inviteTarget.id) fetchUsers(inviteTarget.id)
             setInviteTarget(null)
+          }}
+        />
+      )}
+      {showInviteStaff && (
+        <InviteStaffModal
+          onClose={() => setShowInviteStaff(false)}
+          onDone={(newMember) => {
+            setStaff(prev => [...prev, newMember])
+            setShowInviteStaff(false)
           }}
         />
       )}
@@ -718,6 +847,92 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
             </div>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Invite Staff Modal ───────────────────────────────────────────────────────
+
+function InviteStaffModal({ onClose, onDone }: {
+  onClose: () => void
+  onDone: (member: StaffMember) => void
+}) {
+  const [email, setEmail]   = useState('')
+  const [name, setName]     = useState('')
+  const [inviting, setInviting] = useState(false)
+  const [error, setError]   = useState<string | null>(null)
+  const [done, setDone]     = useState(false)
+  const [newMember, setNewMember] = useState<StaffMember | null>(null)
+
+  async function sendInvite() {
+    if (!email.trim()) return
+    setInviting(true); setError(null)
+    const res = await fetch('/api/invite-staff', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.trim(), name: name.trim() || null }),
+    })
+    const json = await res.json()
+    setInviting(false)
+    if (json.error) { setError(json.error); return }
+    const member: StaffMember = { id: json.userId, name: name.trim() || null, email: email.trim(), clientIds: [] }
+    setNewMember(member)
+    setDone(true)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-zinc-900 flex items-center justify-center">
+              <UserCog className="h-4 w-4 text-white" />
+            </div>
+            <div>
+              <h2 className="font-bold text-zinc-900 text-sm">Add Team Member</h2>
+              <p className="text-xs text-zinc-400">SwipeUp editor — invite-only access</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100"><X className="h-5 w-5" /></button>
+        </div>
+        {!done ? (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-1.5">Name</label>
+              <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Jordan Smith"
+                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#14C29F]/30 focus:border-[#14C29F]" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-1.5">Email *</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jordan@swipeupco.com"
+                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#14C29F]/30 focus:border-[#14C29F]" />
+            </div>
+            <p className="text-[11px] text-zinc-400 bg-zinc-50 rounded-lg px-3 py-2">
+              They'll receive an invite email and log in at portal.swipeupco.com. You can then grant them access to specific clients.
+            </p>
+            {error && <p className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-2">{error}</p>}
+            <button onClick={sendInvite} disabled={inviting || !email.trim()}
+              className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-white bg-[#14C29F] disabled:opacity-50 hover:opacity-90 transition-opacity">
+              {inviting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+              {inviting ? 'Sending…' : 'Send Invite'}
+            </button>
+          </div>
+        ) : (
+          <div className="text-center space-y-4">
+            <div className="h-12 w-12 rounded-full bg-green-100 flex items-center justify-center mx-auto">
+              <CheckCircle2 className="h-6 w-6 text-green-600" />
+            </div>
+            <div>
+              <p className="font-semibold text-zinc-900">Invite sent to {email}</p>
+              <p className="text-sm text-zinc-400 mt-1">Now grant them access to specific client portals using the Team Access panel.</p>
+            </div>
+            <button onClick={() => newMember && onDone(newMember)}
+              className="w-full rounded-xl py-2.5 text-sm font-semibold text-white bg-[#14C29F] hover:opacity-90 transition-opacity">
+              Done
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
