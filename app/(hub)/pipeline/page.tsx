@@ -292,8 +292,8 @@ function PipelineCard({ brief, staff, isAdmin, onClick, onAssign, onPushToClient
           </span>
         )}
 
-        {/* View draft + Push to client buttons */}
-        {!alreadySent && (
+        {/* View draft + Push to client buttons — only when a link exists */}
+        {!alreadySent && brief.draft_url && (
           <div className="flex gap-1.5 mt-1" onClick={e => e.stopPropagation()}>
             <a
               href={brief.draft_url ?? '#'}
