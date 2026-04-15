@@ -335,6 +335,7 @@ export default function InternalPipeline() {
       .from('briefs')
       .select('*')
       .eq('pipeline_status', 'in_production')
+      .not('internal_status', 'is', null)
       .order('created_at', { ascending: false })
 
     if (!briefData?.length) { setBriefs([]); setLoading(false); return }
