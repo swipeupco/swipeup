@@ -9,10 +9,10 @@ export const CLIENT_STAGES = [
 ]
 
 export const INTERNAL_STAGES = [
-  { key: 'in_production',      label: 'In Production',      short: 'In Prod',   color: 'bg-amber-50',  header: 'bg-amber-200',  text: 'text-amber-800',  badge: 'bg-amber-100 text-amber-800' },
-  { key: 'revisions_required', label: 'Revisions Required', short: 'Revisions', color: 'bg-red-50',    header: 'bg-red-200',    text: 'text-red-800',    badge: 'bg-red-100 text-red-700' },
-  { key: 'ready_for_review',   label: 'Ready for Review',   short: 'Ready',     color: 'bg-blue-50',   header: 'bg-blue-200',   text: 'text-blue-800',   badge: 'bg-blue-100 text-blue-700' },
-  { key: 'approved_by_client', label: 'Approved by Client', short: 'Approved',  color: 'bg-green-50',  header: 'bg-green-200',  text: 'text-green-800',  badge: 'bg-green-100 text-green-700' },
+  { key: 'in_production',      label: 'In Production', short: 'In Prod',   dotColor: '#3b82f6', bgColor: '#eff6ff',  badge: 'bg-blue-100 text-blue-700' },
+  { key: 'in_review',          label: 'In Review',     short: 'In Review', dotColor: '#8b5cf6', bgColor: '#f5f3ff',  badge: 'bg-violet-100 text-violet-700' },
+  { key: 'revisions_required', label: 'Revisions',     short: 'Revisions', dotColor: '#ef4444', bgColor: '#fef2f2',  badge: 'bg-red-100 text-red-700' },
+  { key: 'approved_by_client', label: 'Approved',      short: 'Approved',  dotColor: '#22c55e', bgColor: '#f0fdf4',  badge: 'bg-green-100 text-green-700' },
 ]
 
 export const CLIENT_STAGE_LABELS: Record<string, string> = Object.fromEntries(

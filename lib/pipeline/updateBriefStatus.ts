@@ -15,7 +15,7 @@ function deriveInternalStatus(pipeline_status: string): string {
     case 'backlog':       return 'in_production'
     case 'in_production': return 'in_production'
     case 'qa_review':     return 'in_production'
-    case 'client_review': return 'ready_for_review'
+    case 'client_review': return 'in_review'
     case 'approved':      return 'approved_by_client'
     default:              return 'in_production'
   }

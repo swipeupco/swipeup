@@ -112,10 +112,10 @@ export function BriefDrawer({ brief, clientColor, clientName, onClose, onMove, o
   async function saveDraftUrl() {
     if (!draftUrl.trim()) return
     setSavingUrl(true)
-    // Saving a draft link automatically moves internal status to ready_for_review
+    // Saving a draft link automatically moves internal status to in_review
     const updates = await updateBriefStatus(brief.id, {
       draft_url: draftUrl.trim(),
-      internal_status: 'ready_for_review',
+      internal_status: 'in_review',
     })
     setSavingUrl(false)
     setUrlSaved(true)
@@ -128,7 +128,7 @@ export function BriefDrawer({ brief, clientColor, clientName, onClose, onMove, o
     // Atomically update both fields
     const updates = await updateBriefStatus(brief.id, {
       pipeline_status: 'client_review',
-      internal_status: 'ready_for_review',
+      internal_status: 'in_review',
     })
     onMove(brief.id, 'client_review')
     onBriefUpdate?.(updates)
@@ -228,7 +228,7 @@ export function BriefDrawer({ brief, clientColor, clientName, onClose, onMove, o
               </div>
 
               {/* Action buttons */}
-              {internalStatus === 'ready_for_review' && brief.pipeline_status !== 'client_review' && brief.pipeline_status !== 'approved' && (
+              {internalStatus === 'in_review' && brief.pipeline_status !== 'client_review' && brief.pipeline_status !== 'approved' && (
                 <button
                   onClick={pushToClientReview}
                   className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:opacity-90 transition-opacity"
