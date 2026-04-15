@@ -55,7 +55,7 @@ export default function InternalPipeline() {
     const counts: Record<string, number> = {}
     commentData?.forEach(c => { counts[c.brief_id] = (counts[c.brief_id] ?? 0) + 1 })
 
-    setBriefs(briefData ?? [])
+    setBriefs((briefData as unknown as Brief[]) ?? [])
     setFeedback(counts)
     setLoading(false)
   }

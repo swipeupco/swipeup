@@ -52,8 +52,8 @@ export default function Dashboard() {
         .order('created_at', { ascending: false })
         .limit(50)
 
-      setBriefs((briefData as Brief[]) ?? [])
-      setComments((commentData as Comment[]) ?? [])
+      setBriefs((briefData as unknown as Brief[]) ?? [])
+      setComments((commentData as unknown as Comment[]) ?? [])
       setLoading(false)
     }
     load()

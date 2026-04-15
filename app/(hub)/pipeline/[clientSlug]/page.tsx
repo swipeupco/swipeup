@@ -63,7 +63,7 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
       .eq('client_id', clientData.id)
       .order('pos', { ascending: true })
 
-    setBriefs(briefData ?? [])
+    setBriefs((briefData as unknown as Brief[]) ?? [])
     setLoading(false)
   }
 
