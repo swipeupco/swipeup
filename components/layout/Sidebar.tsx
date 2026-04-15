@@ -6,8 +6,8 @@ import { LayoutGrid, LogOut, Users, Kanban } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 const nav = [
-  { href: '/',         label: 'All Clients',    icon: LayoutGrid },
-  { href: '/pipeline', label: 'Full Pipeline',  icon: Kanban },
+  { href: '/',         label: 'All Clients',         icon: LayoutGrid },
+  { href: '/pipeline', label: 'Production Pipeline', icon: Kanban },
 ]
 
 function cn(...classes: (string | boolean | undefined)[]) {
