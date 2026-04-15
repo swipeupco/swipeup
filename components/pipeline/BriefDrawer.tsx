@@ -315,9 +315,17 @@ export function BriefDrawer({ brief, clientColor, clientName, onClose, onMove, o
 
               {/* Draft / Review link */}
               <div>
-                <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">
-                  {internalMode ? 'Draft Link' : 'Review Link'}
-                </p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">
+                    {internalMode ? 'Draft Link' : 'Review Link'}
+                  </p>
+                  {brief.draft_url?.includes('frame.io') && (
+                    <span className="flex items-center gap-1 text-[10px] font-semibold rounded-full bg-indigo-50 text-indigo-600 px-2 py-0.5 border border-indigo-100">
+                      <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-pulse" />
+                      Frame.io
+                    </span>
+                  )}
+                </div>
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
@@ -347,8 +355,13 @@ export function BriefDrawer({ brief, clientColor, clientName, onClose, onMove, o
                     style={{ color: internalMode ? '#14C29F' : clientColor }}
                   >
                     <ExternalLink className="h-3 w-3" />
-                    Open draft
+                    {brief.draft_url.includes('frame.io') ? 'Open in Frame.io' : 'Open draft'}
                   </a>
+                )}
+                {internalMode && !brief.draft_url && (
+                  <p className="mt-1.5 text-[10px] text-zinc-400">
+                    Paste a Frame.io review link or any URL — or set up the webhook to auto-populate.
+                  </p>
                 )}
               </div>
 
