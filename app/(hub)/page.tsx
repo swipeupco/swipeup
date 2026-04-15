@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowRight, ChevronDown, LogIn, Loader2, Plus, X,
   CheckCircle2, Mail, Store, Truck, Package,
-  Palette, Upload, Copy, Check, Link as LinkIcon,
+  Palette, Upload, Copy, Check, Link as LinkIcon, UserPlus,
 } from 'lucide-react'
 
 interface Client {
@@ -65,6 +65,9 @@ export default function ClientsOverview() {
 
   // Branding editor
   const [brandingOpen, setBrandingOpen] = useState<string | null>(null)
+
+  // Invite existing client user
+  const [inviteTarget, setInviteTarget] = useState<Client | null>(null)
 
   const dropdownRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
@@ -205,9 +208,18 @@ export default function ClientsOverview() {
                       </button>
 
                       {isOpen && (
-                        <div className="absolute right-0 top-full mt-1.5 z-20 min-w-[200px] rounded-xl border border-zinc-200 bg-white shadow-lg py-1">
+                        <div className="absolute right-0 top-full mt-1.5 z-20 min-w-[220px] rounded-xl border border-zinc-200 bg-white shadow-lg py-1">
                           {users.length === 0 ? (
-                            <p className="px-4 py-2.5 text-xs text-zinc-400">No users — invite one first</p>
+                            <div className="px-4 py-3">
+                              <p className="text-xs text-zinc-400 mb-2">No users yet</p>
+                              <button
+                                onClick={() => { setOpenDropdown(null); setInviteTarget(client) }}
+                                className="w-full flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white bg-[#14C29F] hover:opacity-90 transition-opacity"
+                              >
+                                <Mail className="h-3 w-3" />
+                                Invite user
+                              </button>
+                            </div>
                           ) : (
                             users.map(u => (
                               <button
@@ -226,6 +238,17 @@ export default function ClientsOverview() {
                                 {impersonating === u.id && <Loader2 className="h-3 w-3 animate-spin text-zinc-400 ml-auto flex-shrink-0" />}
                               </button>
                             ))
+                          )}
+                          {users.length > 0 && (
+                            <div className="border-t border-zinc-100 px-4 py-2">
+                              <button
+                                onClick={() => { setOpenDropdown(null); setInviteTarget(client) }}
+                                className="flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-800 transition-colors"
+                              >
+                                <UserPlus className="h-3 w-3" />
+                                Invite another user
+                              </button>
+                            </div>
                           )}
                         </div>
                       )}
@@ -296,6 +319,122 @@ export default function ClientsOverview() {
           onCreated={() => { setShowNewClient(false); load() }}
         />
       )}
+
+      {/* Invite User Modal (existing client) */}
+      {inviteTarget && (
+        <InviteUserModal
+          client={inviteTarget}
+          onClose={() => setInviteTarget(null)}
+          onDone={() => {
+            // Clear cached users so dropdown re-fetches
+            setClientUsers(prev => { const n = { ...prev }; delete n[inviteTarget.id]; return n })
+            setInviteTarget(null)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── Invite User Modal (for existing clients) ────────────────────────────────
+
+function InviteUserModal({ client, onClose, onDone }: {
+  client: Client
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [email, setEmail]   = useState('')
+  const [name, setName]     = useState('')
+  const [inviting, setInviting] = useState(false)
+  const [error, setError]   = useState<string | null>(null)
+  const [done, setDone]     = useState(false)
+  const loginUrl = `${CLIENT_PORTAL_URL}/login?client=${client.slug}`
+
+  async function sendInvite() {
+    if (!email.trim()) return
+    setInviting(true)
+    setError(null)
+    const res = await fetch('/api/invite-client', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId: client.id, email: email.trim(), name: name.trim() || null }),
+    })
+    const json = await res.json()
+    setInviting(false)
+    if (json.error) { setError(json.error); return }
+    setDone(true)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: client.color }}>
+              {client.name.slice(0, 2).toUpperCase()}
+            </div>
+            <div>
+              <h2 className="font-bold text-zinc-900 text-sm">Invite User</h2>
+              <p className="text-xs text-zinc-400">{client.name}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {!done ? (
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-semibold text-zinc-600 uppercase tracking-wide block mb-1.5">Name</label>
+              <input
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="e.g. Sarah Johnson"
+                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:border-[#14C29F] focus:ring-[#14C29F]/20"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-zinc-600 uppercase tracking-wide block mb-1.5">Email *</label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="sarah@clientbrand.com"
+                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:border-[#14C29F] focus:ring-[#14C29F]/20"
+              />
+            </div>
+            {error && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-2">{error}</p>}
+            <button
+              onClick={sendInvite}
+              disabled={inviting || !email.trim()}
+              className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-white bg-[#14C29F] disabled:opacity-50 hover:opacity-90 transition-opacity"
+            >
+              {inviting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+              {inviting ? 'Sending…' : 'Send Invite'}
+            </button>
+          </div>
+        ) : (
+          <div className="text-center space-y-4">
+            <div className="h-12 w-12 rounded-full bg-green-100 flex items-center justify-center mx-auto">
+              <CheckCircle2 className="h-6 w-6 text-green-600" />
+            </div>
+            <div>
+              <p className="font-semibold text-zinc-900">Invite sent!</p>
+              <p className="text-sm text-zinc-500 mt-1">{email}</p>
+            </div>
+            <div className="text-left rounded-xl bg-zinc-50 border border-zinc-200 p-3 space-y-1">
+              <p className="text-xs font-semibold text-zinc-600">Their login URL</p>
+              <CopyLoginUrl url={loginUrl} />
+            </div>
+            <button onClick={onDone} className="w-full rounded-xl py-2.5 text-sm font-semibold text-white bg-[#14C29F] hover:opacity-90 transition-opacity">
+              Done
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
