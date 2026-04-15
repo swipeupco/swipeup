@@ -301,7 +301,14 @@ export function BriefDrawer({
                     type="url"
                     value={draftUrl}
                     onChange={e => setDraftUrl(e.target.value)}
-                    placeholder="https://app.frame.io/... or drive.google.com/..."
+                    onPaste={e => {
+                      // Auto-save on paste — no need to click Save
+                      const pasted = e.clipboardData.getData('text').trim()
+                      if (pasted.startsWith('http')) {
+                        setTimeout(() => saveDraftUrl(), 50)
+                      }
+                    }}
+                    placeholder="Paste a Frame.io or Google Drive link…"
                     className="w-full rounded-xl border border-zinc-200 bg-zinc-50 pl-9 pr-3 py-2.5 text-sm text-zinc-700 focus:border-[#14C29F] focus:outline-none focus:ring-2 focus:ring-[#14C29F]/20"
                   />
                 </div>
@@ -334,7 +341,7 @@ export function BriefDrawer({
               </div>
             )}
 
-            {/* ── Internal action buttons ── */}
+            {/* ── Internal actions ── */}
             {internalMode && (
               <div className="space-y-2 pt-1">
 
@@ -348,39 +355,53 @@ export function BriefDrawer({
                   </div>
                 )}
 
-                {/* Push to client review */}
-                {internalStatus === 'in_review' && brief.pipeline_status !== 'client_review' && brief.pipeline_status !== 'approved' && (
-                  <button
-                    onClick={pushToClientReview}
-                    className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:opacity-90 transition-opacity"
-                  >
-                    Push to Client Review
-                    <ArrowRight className="h-4 w-4" />
-                  </button>
+                {/* Push to client — always visible until sent/approved */}
+                {brief.pipeline_status !== 'client_review' && brief.pipeline_status !== 'approved' && (
+                  <div className="rounded-2xl border border-zinc-100 bg-zinc-50 p-4 space-y-3">
+                    <div>
+                      <p className="text-xs font-semibold text-zinc-700">Ready to send to client?</p>
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        {brief.draft_url
+                          ? 'The client will be able to view and leave feedback on this brief.'
+                          : 'Save a draft link above before sending to the client.'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={pushToClientReview}
+                      disabled={!brief.draft_url}
+                      className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white bg-[#14C29F] hover:opacity-90 disabled:opacity-40 transition-opacity"
+                    >
+                      Push to client
+                      <ArrowRight className="h-4 w-4" />
+                    </button>
+                  </div>
                 )}
 
-                {/* Mark approved */}
+                {/* Already with client */}
                 {brief.pipeline_status === 'client_review' && internalStatus !== 'approved_by_client' && (
-                  <button
-                    onClick={markApprovedByClient}
-                    className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white bg-emerald-600 hover:opacity-90 transition-opacity"
-                  >
-                    <CheckCircle2 className="h-4 w-4" />
-                    Mark Approved by Client
-                  </button>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 rounded-xl bg-blue-50 border border-blue-100 px-3 py-2.5">
+                      <CheckCircle2 className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                      <p className="text-xs text-blue-700 font-medium">Sent to client — awaiting their feedback</p>
+                    </div>
+                    <button
+                      onClick={markApprovedByClient}
+                      className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white bg-emerald-600 hover:opacity-90 transition-opacity"
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                      Mark approved by client
+                    </button>
+                  </div>
                 )}
 
-                {/* Client pipeline advance (non-internal stages) */}
-                {!internalMode && nextClientStage && (
-                  <button
-                    onClick={() => onMove(brief.id, nextClientStage)}
-                    className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-                    style={{ backgroundColor: clientColor }}
-                  >
-                    Move to {CLIENT_STAGE_LABELS[nextClientStage]}
-                    <ArrowRight className="h-4 w-4" />
-                  </button>
+                {/* Approved */}
+                {brief.pipeline_status === 'approved' && (
+                  <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2.5">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" />
+                    <p className="text-xs text-emerald-700 font-medium">Approved by client ✓</p>
+                  </div>
                 )}
+
               </div>
             )}
           </div>
