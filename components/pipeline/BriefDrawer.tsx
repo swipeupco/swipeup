@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { X, ExternalLink, Send, Lock, MessageSquare, Link as LinkIcon, ArrowRight, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { format } from 'date-fns'
 import { CLIENT_STAGES, CLIENT_STAGE_LABELS, INTERNAL_STAGES, INTERNAL_STAGE_BADGES } from '@/lib/pipeline/stages'
+import { updateBriefStatus } from '@/lib/pipeline/updateBriefStatus'
 
 interface Brief {
   id: string
@@ -33,15 +34,16 @@ interface Props {
   clientColor: string
   clientName?: string
   onClose: () => void
-  onMove: (id: string, stage: string) => void            // client pipeline_status
-  onInternalMove?: (id: string, stage: string) => void   // internal_status
+  onMove: (id: string, stage: string) => void
+  onInternalMove?: (id: string, stage: string) => void
   onRefresh: () => void
+  onBriefUpdate?: (updates: Partial<Brief>) => void
   internalMode?: boolean
 }
 
 const CLIENT_STAGE_KEYS = CLIENT_STAGES.map(s => s.key)
 
-export function BriefDrawer({ brief, clientColor, clientName, onClose, onMove, onInternalMove, onRefresh, internalMode }: Props) {
+export function BriefDrawer({ brief, clientColor, clientName, onClose, onMove, onInternalMove, onRefresh, onBriefUpdate, internalMode }: Props) {
   const [comments, setComments]       = useState<Comment[]>([])
   const [newComment, setNewComment]   = useState('')
   const [isInternal, setIsInternal]   = useState(internalMode ?? false) // default to internal in hub
@@ -110,21 +112,36 @@ export function BriefDrawer({ brief, clientColor, clientName, onClose, onMove, o
   async function saveDraftUrl() {
     if (!draftUrl.trim()) return
     setSavingUrl(true)
-    const supabase = createClient()
-    await supabase.from('briefs').update({ draft_url: draftUrl.trim() }).eq('id', brief.id)
+    // Saving a draft link automatically moves internal status to ready_for_review
+    const updates = await updateBriefStatus(brief.id, {
+      draft_url: draftUrl.trim(),
+      internal_status: 'ready_for_review',
+    })
     setSavingUrl(false)
     setUrlSaved(true)
+    onBriefUpdate?.(updates)
     onRefresh()
     setTimeout(() => setUrlSaved(false), 2000)
   }
 
   async function pushToClientReview() {
+    // Atomically update both fields
+    const updates = await updateBriefStatus(brief.id, {
+      pipeline_status: 'client_review',
+      internal_status: 'ready_for_review',
+    })
     onMove(brief.id, 'client_review')
+    onBriefUpdate?.(updates)
   }
 
   async function markApprovedByClient() {
+    const updates = await updateBriefStatus(brief.id, {
+      pipeline_status: 'approved',
+      internal_status: 'approved_by_client',
+    })
     onMove(brief.id, 'approved')
     onInternalMove?.(brief.id, 'approved_by_client')
+    onBriefUpdate?.(updates)
   }
 
   const clientComments   = comments.filter(c => !c.is_internal)
