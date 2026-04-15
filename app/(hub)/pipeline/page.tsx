@@ -37,14 +37,21 @@ export default function InternalPipeline() {
   const [feedbackCounts, setFeedback] = useState<Record<string, number>>({})
   const [loading, setLoading]         = useState(true)
   const [selected, setSelected]       = useState<Brief | null>(null)
+  const [showApproved, setShowApproved] = useState(false)
 
-  async function load() {
+  async function load(includeApproved = false) {
     const supabase = createClient()
 
-    const { data: briefData } = await supabase
+    let query = supabase
       .from('briefs')
       .select('*, clients(name, color, slug)')
       .order('created_at', { ascending: false })
+
+    if (!includeApproved) {
+      query = query.neq('pipeline_status', 'approved')
+    }
+
+    const { data: briefData } = await query
 
     // Count client feedback (non-internal) comments per brief
     const { data: commentData } = await supabase
@@ -60,13 +67,25 @@ export default function InternalPipeline() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load(showApproved)
+    const supabase = createClient()
+    const channel = supabase
+      .channel('briefs-internal-pipeline')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'briefs' }, () => load(showApproved))
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showApproved])
 
   async function moveInternal(briefId: string, newStatus: string) {
     const supabase = createClient()
-    await supabase.from('briefs').update({ internal_status: newStatus }).eq('id', briefId)
-    setBriefs(prev => prev.map(b => b.id === briefId ? { ...b, internal_status: newStatus } : b))
-    setSelected(prev => prev?.id === briefId ? { ...prev, internal_status: newStatus } : prev)
+    // Syncing both statuses keeps internal board and client board in agreement
+    const updates: Record<string, string> = { internal_status: newStatus }
+    if (newStatus === 'approved_by_client') updates.pipeline_status = 'approved'
+    await supabase.from('briefs').update(updates).eq('id', briefId)
+    setBriefs(prev => prev.map(b => b.id === briefId ? { ...b, ...updates } : b))
+    setSelected(prev => prev?.id === briefId ? { ...prev, ...updates } : prev)
   }
 
   async function moveClient(briefId: string, newStage: string) {
@@ -92,16 +111,28 @@ export default function InternalPipeline() {
       <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-zinc-200 flex-shrink-0">
         <div>
           <h1 className="font-semibold text-zinc-900">Production Pipeline</h1>
-          <p className="text-xs text-zinc-400">{briefs.length} briefs across all clients</p>
+          <p className="text-xs text-zinc-400">{briefs.length} active briefs across all clients</p>
         </div>
-        {revisionsCount > 0 && (
-          <div className="flex items-center gap-1.5 rounded-lg bg-red-50 border border-red-100 px-3 py-1.5">
-            <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
-            <span className="text-xs font-semibold text-red-700">
-              {revisionsCount} brief{revisionsCount !== 1 ? 's' : ''} need revisions
-            </span>
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          {revisionsCount > 0 && (
+            <div className="flex items-center gap-1.5 rounded-lg bg-red-50 border border-red-100 px-3 py-1.5">
+              <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
+              <span className="text-xs font-semibold text-red-700">
+                {revisionsCount} brief{revisionsCount !== 1 ? 's' : ''} need revisions
+              </span>
+            </div>
+          )}
+          <button
+            onClick={() => setShowApproved(v => !v)}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition-colors ${
+              showApproved
+                ? 'bg-green-50 border-green-200 text-green-700'
+                : 'bg-white border-zinc-200 text-zinc-500 hover:bg-zinc-50'
+            }`}
+          >
+            {showApproved ? 'Hiding approved' : 'Show approved'}
+          </button>
+        </div>
       </div>
 
       {/* Kanban board */}

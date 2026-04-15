@@ -67,7 +67,16 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [clientSlug])
+  useEffect(() => {
+    load()
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`briefs-client-${clientSlug}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'briefs' }, () => load())
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientSlug])
 
   async function moveToStage(briefId: string, newStage: string) {
     const supabase = createClient()
