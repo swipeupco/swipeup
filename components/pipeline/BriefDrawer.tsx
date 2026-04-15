@@ -320,17 +320,6 @@ export function BriefDrawer({
                   {urlSaved ? '✓ Saved' : savingUrl ? '…' : 'Save'}
                 </button>
               </div>
-              {brief.draft_url && (
-                <a
-                  href={brief.draft_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2 flex items-center gap-1.5 text-xs font-medium text-[#14C29F] hover:underline"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  {brief.draft_url.includes('frame.io') ? 'Open in Frame.io' : 'Open draft'}
-                </a>
-              )}
             </div>
 
             {/* Due date */}
@@ -357,19 +346,21 @@ export function BriefDrawer({
 
                 {/* Push to client — always visible until sent/approved */}
                 {brief.pipeline_status !== 'client_review' && brief.pipeline_status !== 'approved' && (
-                  <div className="rounded-2xl border border-zinc-100 bg-zinc-50 p-4 space-y-3">
-                    <div>
-                      <p className="text-xs font-semibold text-zinc-700">Ready to send to client?</p>
-                      <p className="text-[11px] text-zinc-400 mt-0.5">
-                        {brief.draft_url
-                          ? 'The client will be able to view and leave feedback on this brief.'
-                          : 'Save a draft link above before sending to the client.'}
-                      </p>
-                    </div>
+                  <div className="flex gap-2 pt-1">
+                    <a
+                      href={brief.draft_url ?? '#'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={e => { if (!brief.draft_url) e.preventDefault() }}
+                      className={`flex-1 flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white bg-blue-500 hover:opacity-90 transition-opacity ${!brief.draft_url ? 'opacity-40 pointer-events-none' : ''}`}
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      View draft
+                    </a>
                     <button
                       onClick={pushToClientReview}
                       disabled={!brief.draft_url}
-                      className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white bg-[#14C29F] hover:opacity-90 disabled:opacity-40 transition-opacity"
+                      className="flex-1 flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white bg-emerald-500 hover:opacity-90 disabled:opacity-40 transition-opacity"
                     >
                       Push to client
                       <ArrowRight className="h-4 w-4" />
