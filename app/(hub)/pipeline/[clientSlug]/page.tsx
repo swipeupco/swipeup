@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, use, useMemo } from 'react'
+import React, { useEffect, useState, use, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, ExternalLink, Plus, X, Loader2, Video, Image as ImageIcon, Mail, LayoutGrid, Mic, FileText, CircleDot, MessageSquare, CalendarDays, User } from 'lucide-react'
@@ -21,12 +21,13 @@ interface Brief {
   due_date: string | null
   client_id: string
   cover_url?: string | null
+  assigned_to?: string | null
   assigned_designer_name?: string | null
   assigned_designer_avatar?: string | null
   assigned_designer_id?: string | null
 }
 
-interface CommentCount { brief_id: string; count: number }
+interface StaffLite { id: string; name: string | null; avatar_url: string | null; email: string | null }
 
 const CONTENT_TYPES = ['Video', 'Graphic', 'EDM', 'Signage', 'Voiceover', 'Script', 'Other']
 const TYPE_ICON: Record<string, typeof Video> = {
@@ -60,6 +61,7 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
 
   const [client, setClient]   = useState<Client | null>(null)
   const [briefs, setBriefs]   = useState<Brief[]>([])
+  const [staff, setStaff]     = useState<StaffLite[]>([])
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [selectedBrief, setSelectedBrief] = useState<Brief | null>(null)
@@ -73,14 +75,31 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
     if (!clientData) { setLoading(false); return }
     setClient(clientData)
 
-    const { data: briefData } = await supabase
-      .from('briefs').select('*')
-      .eq('client_id', clientData.id)
-      .order('pos', { ascending: true })
-    setBriefs((briefData as unknown as Brief[]) ?? [])
+    const [{ data: briefData }, { data: staffData }] = await Promise.all([
+      supabase.from('briefs').select('*')
+        .eq('client_id', clientData.id)
+        .order('pos', { ascending: true }),
+      supabase.from('profiles')
+        .select('id, name, avatar_url, email')
+        .or('hub_role.eq.admin,hub_role.eq.designer,is_staff.eq.true,is_admin.eq.true'),
+    ])
+    const staffList = (staffData as StaffLite[]) ?? []
+    setStaff(staffList)
+
+    // Join assignee profile on the brief row
+    const hydrated = (briefData ?? []).map((b: Record<string, unknown>) => {
+      const assignee = staffList.find(s => s.id === b.assigned_to)
+      return {
+        ...b,
+        assigned_designer_id:     (b.assigned_to as string | null) ?? null,
+        assigned_designer_name:   assignee?.name ?? null,
+        assigned_designer_avatar: assignee?.avatar_url ?? null,
+      } as Brief
+    })
+    setBriefs(hydrated)
 
     // Comment counts — one fetch for the whole board
-    const ids = (briefData ?? []).map(b => b.id)
+    const ids = hydrated.map(b => b.id)
     if (ids.length) {
       const { data: counts } = await supabase
         .from('brief_comments')
@@ -95,6 +114,22 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
       setCommentCounts({})
     }
     setLoading(false)
+  }
+
+  async function assignDesigner(briefId: string, staffId: string | null) {
+    const supabase = createClient()
+    await supabase.from('briefs').update({ assigned_to: staffId }).eq('id', briefId)
+    const assignee = staffId ? staff.find(s => s.id === staffId) : null
+    setBriefs(prev => prev.map(b => b.id === briefId ? {
+      ...b,
+      assigned_to: staffId,
+      assigned_designer_id: staffId,
+      assigned_designer_name:   assignee?.name ?? null,
+      assigned_designer_avatar: assignee?.avatar_url ?? null,
+    } : b))
+    if (selectedBrief?.id === briefId) {
+      setSelectedBrief(prev => prev ? { ...prev, assigned_to: staffId } : null)
+    }
   }
 
   useEffect(() => {
@@ -204,9 +239,11 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
                     <HubBriefCard
                       key={brief.id}
                       brief={brief}
+                      staff={staff}
                       commentCount={commentCounts[brief.id] ?? 0}
                       clientColor={client.color}
                       onClick={() => setSelectedBrief(brief)}
+                      onAssign={(uid) => assignDesigner(brief.id, uid)}
                     />
                   ))}
                   {colBriefs.length === 0 && (
@@ -262,20 +299,22 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
 
 // ─── Brief Card (Hub) ─────────────────────────────────────────────────────────
 
-function HubBriefCard({ brief, commentCount, clientColor, onClick }: {
+function HubBriefCard({ brief, staff, commentCount, clientColor, onClick, onAssign }: {
   brief: Brief
+  staff: StaffLite[]
   commentCount: number
   clientColor: string
   onClick: () => void
+  onAssign: (staffId: string | null) => void
 }) {
   const TypeIcon = brief.content_type ? (TYPE_ICON[brief.content_type] ?? CircleDot) : null
   const isRevisions = brief.internal_status === 'revisions_required'
   const hasDraft = !!brief.draft_url
 
   return (
-    <button
+    <div
       onClick={onClick}
-      className="group w-full text-left rounded-xl border border-[var(--border)] bg-[var(--surface-2)] hover:bg-[var(--surface-3)] hover:border-[var(--brand-soft)] transition-colors overflow-hidden"
+      className="group w-full text-left rounded-xl border border-[var(--border)] bg-[var(--surface-2)] hover:bg-[var(--surface-3)] hover:border-[var(--brand-soft)] transition-colors overflow-hidden cursor-pointer"
     >
       {/* Left accent stripe in client color */}
       <div className="flex">
@@ -321,36 +360,95 @@ function HubBriefCard({ brief, commentCount, clientColor, onClick }: {
                 </span>
               )}
             </div>
-            {/* Right: internal designer chip (Task 6 will fill this) */}
-            <DesignerChip
-              name={brief.assigned_designer_name ?? null}
-              avatar={brief.assigned_designer_avatar ?? null}
+            {/* Right: internal designer chip — clickable to open picker */}
+            <InlineDesignerPicker
+              staff={staff}
+              currentId={brief.assigned_designer_id ?? null}
+              currentName={brief.assigned_designer_name ?? null}
+              currentAvatar={brief.assigned_designer_avatar ?? null}
+              onAssign={onAssign}
             />
           </div>
         </div>
       </div>
-    </button>
+    </div>
   )
 }
 
-function DesignerChip({ name, avatar }: { name: string | null; avatar: string | null }) {
-  if (!name && !avatar) {
-    return (
-      <div className="flex items-center gap-1 rounded-full border border-dashed border-[var(--border)] px-1.5 py-0.5 text-[10px] text-[var(--text-dim)]">
-        <User className="h-3 w-3" />
-        <span>Assign</span>
-      </div>
-    )
-  }
+function InlineDesignerPicker({ staff, currentId, currentName, currentAvatar, onAssign }: {
+  staff: StaffLite[]
+  currentId: string | null
+  currentName: string | null
+  currentAvatar: string | null
+  onAssign: (staffId: string | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = React.useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function h(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [open])
+
+  function pick(id: string | null) { onAssign(id); setOpen(false) }
+
   return (
-    <div className="flex items-center gap-1 rounded-full bg-[var(--surface)] border border-[var(--border)] pl-0.5 pr-2 py-0.5 text-[10px] font-medium text-[var(--text-muted)]">
-      <div className="h-4 w-4 rounded-full bg-[var(--surface-3)] flex items-center justify-center overflow-hidden">
-        {avatar
-          ? <img src={avatar} alt="" className="h-full w-full object-cover" />
-          : <span className="text-[8px] font-bold text-[var(--text)]">{(name ?? '?').slice(0, 1).toUpperCase()}</span>
-        }
-      </div>
-      <span className="truncate max-w-[60px]">{name?.split(' ')[0] ?? '—'}</span>
+    <div className="relative" ref={ref} onClick={e => e.stopPropagation()}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        aria-label={currentName ? `Assigned to ${currentName}` : 'Assign designer'}
+        className={`flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+          currentName
+            ? 'bg-[var(--surface)] border border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--brand)]'
+            : 'border border-dashed border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--brand)] hover:text-[var(--brand)]'
+        }`}
+      >
+        <div className="h-4 w-4 rounded-full bg-[var(--surface-3)] flex items-center justify-center overflow-hidden">
+          {currentAvatar
+            ? <img src={currentAvatar} alt="" className="h-full w-full object-cover" />
+            : currentName
+              ? <span className="text-[8px] font-bold text-[var(--text)]">{currentName.slice(0, 1).toUpperCase()}</span>
+              : <User className="h-3 w-3" />
+          }
+        </div>
+        <span className="truncate max-w-[60px]">{currentName?.split(' ')[0] ?? 'Assign'}</span>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 bottom-full mb-1 w-44 rounded-xl bg-[var(--surface)] border border-[var(--border)] shadow-xl z-40 overflow-hidden">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] px-3 pt-2.5 pb-1">Assign designer</p>
+          <div className="max-h-48 overflow-y-auto">
+            {staff.map(s => (
+              <button
+                key={s.id}
+                onClick={() => pick(s.id)}
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-[var(--text)] hover:bg-[var(--surface-2)] transition-colors"
+              >
+                <div className="h-5 w-5 rounded-full bg-[var(--surface-3)] flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {s.avatar_url
+                    ? <img src={s.avatar_url} alt="" className="h-full w-full object-cover" />
+                    : <span className="text-[9px] font-bold">{(s.name ?? s.email ?? '?').slice(0, 1).toUpperCase()}</span>
+                  }
+                </div>
+                <span className="truncate flex-1 text-left">{s.name ?? s.email}</span>
+              </button>
+            ))}
+            {staff.length === 0 && (
+              <p className="px-3 py-4 text-[10px] text-[var(--text-dim)] text-center">No staff members yet</p>
+            )}
+          </div>
+          {currentId && (
+            <button
+              onClick={() => pick(null)}
+              className="flex items-center gap-2 w-full px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 transition-colors border-t border-[var(--border-muted)]"
+            >
+              <X className="h-3 w-3" /> Unassign
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -376,6 +474,22 @@ function CreateBriefModal({ clientId, clientColor, clientName, onClose, onCreate
     if (!name.trim()) return
     setSaving(true)
     const supabase = createClient()
+
+    // Auto-assignment: if this client has a default assignee in
+    // staff_default_assignments, tag the new brief with that designer.
+    // First match wins (the table supports many-to-many but briefs.assigned_to
+    // is a single uuid, so we pick one deterministically).
+    let assignedTo: string | null = null
+    try {
+      const { data: defaults } = await supabase
+        .from('staff_default_assignments')
+        .select('staff_id')
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: true })
+        .limit(1)
+      assignedTo = (defaults?.[0] as { staff_id: string } | undefined)?.staff_id ?? null
+    } catch { /* table may not be deployed yet — skip auto-assign silently */ }
+
     await supabase.from('briefs').insert({
       name:            name.trim(),
       description:     description.trim() || null,
@@ -385,6 +499,7 @@ function CreateBriefModal({ clientId, clientColor, clientName, onClose, onCreate
       client_id:       clientId,
       pipeline_status: 'backlog',
       internal_status: 'in_production',
+      assigned_to:     assignedTo,
     })
     setSaving(false)
     onCreated()
