@@ -9,6 +9,7 @@ import {
 import { format } from 'date-fns'
 import { CLIENT_STAGES, CLIENT_STAGE_LABELS, INTERNAL_STAGES, INTERNAL_STAGE_BADGES } from '@/lib/pipeline/stages'
 import { updateBriefStatus } from '@/lib/pipeline/updateBriefStatus'
+import TagUsersControl from '@/components/briefs/TagUsersControl'
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -24,6 +25,9 @@ interface Brief {
   due_date: string | null
   client_id: string
   cover_url?: string | null
+  created_by?: string | null
+  creator?: { id: string; name: string | null; avatar_url: string | null } | null
+  tagged_users?: { id: string; name: string | null; avatar_url: string | null }[]
 }
 
 interface Comment {
@@ -272,6 +276,18 @@ export function BriefDrawer({
 
           {/* ── LEFT: Brief details ── */}
           <div className="flex-1 overflow-y-auto p-7 space-y-5">
+
+            {/* People */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">People</p>
+              <TagUsersControl
+                briefId={brief.id}
+                clientId={brief.client_id}
+                tagged={brief.tagged_users ?? []}
+                tint={clientColor}
+                onChange={onRefresh}
+              />
+            </div>
 
             {/* Description */}
             {brief.description && (

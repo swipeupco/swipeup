@@ -41,6 +41,72 @@ interface Brief {
   due_date: string | null
   client_id: string
   cover_url?: string | null
+  created_by?: string | null
+  creator?: { id: string; name: string | null; avatar_url: string | null } | null
+  tagged_users?: { id: string; name: string | null; avatar_url: string | null }[]
+}
+
+function initialsOf(name: string | null | undefined) {
+  if (!name) return '?'
+  const parts = name.trim().split(/\s+/)
+  return parts.length >= 2
+    ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    : parts[0].slice(0, 2).toUpperCase()
+}
+
+function UserAvatar({
+  user, size = 24, ring = false, tint = '#4950F8',
+}: {
+  user: { name: string | null; avatar_url: string | null } | null | undefined
+  size?: number
+  ring?: boolean
+  tint?: string
+}) {
+  const title = user?.name ?? 'Unknown'
+  return (
+    <div
+      title={title}
+      className={`rounded-full flex items-center justify-center text-white font-bold overflow-hidden flex-shrink-0 ${ring ? 'ring-2 ring-white' : ''}`}
+      style={{ width: size, height: size, fontSize: Math.max(9, size * 0.4), backgroundColor: tint }}
+    >
+      {user?.avatar_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={user.avatar_url} alt={title} className="h-full w-full object-cover" />
+      ) : (
+        initialsOf(user?.name)
+      )}
+    </div>
+  )
+}
+
+function StackedAvatars({
+  users, max = 3, size = 22, tint = '#4950F8',
+}: {
+  users: { id: string; name: string | null; avatar_url: string | null }[]
+  max?: number
+  size?: number
+  tint?: string
+}) {
+  const visible = users.slice(0, max)
+  const extra   = users.length - visible.length
+  return (
+    <div className="flex items-center">
+      {visible.map((u, i) => (
+        <div key={u.id} className={i === 0 ? '' : '-ml-2'}>
+          <UserAvatar user={u} size={size} ring tint={tint} />
+        </div>
+      ))}
+      {extra > 0 && (
+        <div
+          className="-ml-2 rounded-full ring-2 ring-white bg-gray-100 text-[10px] font-bold text-gray-600 flex items-center justify-center"
+          style={{ width: size, height: size }}
+          title={`${extra} more`}
+        >
+          +{extra}
+        </div>
+      )}
+    </div>
+  )
 }
 
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'portal.swipeupco.com'
@@ -71,7 +137,32 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
       .eq('client_id', clientData.id)
       .order('pos', { ascending: true })
 
-    setBriefs((briefData as unknown as Brief[]) ?? [])
+    const all = (briefData as unknown as Brief[]) ?? []
+    const briefIds   = all.map(b => b.id)
+    const creatorIds = [...new Set(all.map(b => b.created_by).filter(Boolean))] as string[]
+
+    const tagsRes = briefIds.length
+      ? await supabase.from('brief_assigned_users').select('brief_id, user_id').in('brief_id', briefIds)
+      : { data: [] as { brief_id: string; user_id: string }[] }
+    const tagRows = (tagsRes.data ?? []) as { brief_id: string; user_id: string }[]
+
+    const profileIds = [...new Set([...creatorIds, ...tagRows.map(r => r.user_id)])]
+    let profileMap: Record<string, { id: string; name: string | null; avatar_url: string | null }> = {}
+    if (profileIds.length) {
+      const { data: profs } = await supabase.from('profiles').select('id, name, avatar_url').in('id', profileIds)
+      ;(profs ?? []).forEach(p => { profileMap[p.id] = p })
+    }
+
+    const enriched = all.map(b => ({
+      ...b,
+      creator: b.created_by ? profileMap[b.created_by] ?? null : null,
+      tagged_users: tagRows
+        .filter(r => r.brief_id === b.id)
+        .map(r => profileMap[r.user_id])
+        .filter(Boolean),
+    }))
+
+    setBriefs(enriched)
     setLoading(false)
   }
 
@@ -271,6 +362,20 @@ function BriefCard({ brief, stageKey, clientColor, onClick, onMove }: {
       onClick={onClick}
       className="rounded-2xl bg-white border border-gray-100 shadow-sm hover:shadow-md p-4 cursor-pointer transition-all"
     >
+      {/* Attribution row */}
+      {(brief.creator || (brief.tagged_users?.length ?? 0) > 0) && (
+        <div className="flex items-center mb-2" onClick={e => e.stopPropagation()}>
+          {brief.creator && (
+            <UserAvatar user={brief.creator} size={24} tint={clientColor} />
+          )}
+          {(brief.tagged_users?.length ?? 0) > 0 && (
+            <div className={brief.creator ? '-ml-2' : ''}>
+              <StackedAvatars users={brief.tagged_users ?? []} tint={clientColor} size={22} />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Thumbnail / Cover */}
       <div className="relative h-28 rounded-xl mb-3 overflow-hidden">
         {brief.cover_url ? (
@@ -328,7 +433,18 @@ function BriefCard({ brief, stageKey, clientColor, onClick, onMove }: {
         )}
       </div>
 
-      {/* Action row — mirrors Portal's View Draft + primary action layout */}
+      {/* Open Brief button */}
+      <button
+        type="button"
+        onClick={e => { e.stopPropagation(); onClick() }}
+        className="mb-2 w-full flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+        style={{ backgroundColor: clientColor }}
+      >
+        <ExternalLink className="h-3 w-3" />
+        Open Brief
+      </button>
+
+      {/* Action row — View Draft + Move to next stage */}
       <div className="flex gap-2" onClick={e => e.stopPropagation()}>
         {hasDraft ? (
           <a
@@ -385,6 +501,7 @@ function CreateBriefModal({ clientId, clientColor, clientName, onClose, onCreate
     if (!name.trim()) return
     setSaving(true)
     const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
     await supabase.from('briefs').insert({
       name:            name.trim(),
       description:     description.trim() || null,
@@ -394,6 +511,7 @@ function CreateBriefModal({ clientId, clientColor, clientName, onClose, onCreate
       client_id:       clientId,
       pipeline_status: 'backlog',
       internal_status: 'in_production',
+      created_by:      user?.id ?? null,
     })
     setSaving(false)
     onCreated()
