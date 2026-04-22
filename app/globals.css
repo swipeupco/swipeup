@@ -1,26 +1,98 @@
 @import "tailwindcss";
 
+/* Tailwind 4 dark mode: class-based, toggled by next-themes via .dark on <html> */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ── Design tokens ─────────────────────────────────────────────────────────
+   Hub design system — dark-first, with a light opt-in. Tokens drive every
+   surface, text, and border colour across the Hub so components stay theme-
+   agnostic. Brand accent #4950F8 is the Hub's violet-blue.
+*/
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Brand */
+  --brand: #4950F8;
+  --brand-hover: #5d64ff;
+  --brand-soft: rgba(73, 80, 248, 0.12);
+  --brand-ring: rgba(73, 80, 248, 0.35);
+
+  /* Light surface stack (default for .light) */
+  --bg:         #F7F7F8;
+  --surface:    #FFFFFF;
+  --surface-2:  #F2F2F4;
+  --surface-3:  #E8E8EC;
+  --border:     #E4E4E7;
+  --border-muted:#F0F0F3;
+  --text:       #0A0A0B;
+  --text-muted: #52525B;
+  --text-dim:   #8A8A92;
+
+  --danger: #EF4444;
+  --success:#10B981;
+  --warning:#F59E0B;
+  --info:   #3B82F6;
+}
+
+/* Dark tokens — applied whenever <html> has class="dark". This is also the
+   default because the root layout sets suppressHydrationWarning + the
+   ThemeProvider defaults to "dark" before client hydration. */
+.dark {
+  --bg:         #0A0A0B;
+  --surface:    #141416;
+  --surface-2:  #1B1B1E;
+  --surface-3:  #26262A;
+  --border:     #26262A;
+  --border-muted:#1B1B1E;
+  --text:       #FAFAFA;
+  --text-muted: #A1A1AA;
+  --text-dim:   #71717A;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-muted: var(--border-muted);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-text-dim: var(--text-dim);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-soft: var(--brand-soft);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: dark;
 }
+html.light { color-scheme: light; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Thin scrollbars so kanban columns don't look heavy in dark mode */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--surface-3); }
+
+/* Focus ring — semantic, respects brand */
+*:focus-visible {
+  outline: 2px solid var(--brand-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
