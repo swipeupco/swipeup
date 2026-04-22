@@ -6,7 +6,6 @@ import { usePathname, useRouter } from 'next/navigation'
 import { LayoutGrid, LogOut, Kanban, LayoutDashboard, User } from 'lucide-react'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
-import { NotificationBell } from '@/components/layout/NotificationBell'
 
 // Hub accent colour — SwipeUp teal
 const COLOR = '#14C29F'
@@ -85,17 +84,8 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Notifications + Sign out */}
+      {/* Sign out */}
       <div className="px-3 pb-2 space-y-0.5">
-        <div className="flex items-center gap-2 px-3 py-2">
-          <NotificationBell />
-          <Link
-            href="/account/notifications"
-            className="text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors"
-          >
-            Notifications
-          </Link>
-        </div>
         <button
           onClick={handleLogout}
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors"
