@@ -1,19 +1,27 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
 
 type Mode = 'login' | 'forgot' | 'sent'
 
-export default function LoginPage() {
+function LoginContent() {
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState<string | null>(null)
   const [mode, setMode]         = useState<Mode>('login')
   const router = useRouter()
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    const urlError = searchParams.get('error')
+    if (urlError === 'reset_expired') {
+      setError('Reset link expired or invalid. Please request a new one.')
+    }
+  }, [searchParams])
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -170,5 +178,13 @@ export default function LoginPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginContent />
+    </Suspense>
   )
 }
