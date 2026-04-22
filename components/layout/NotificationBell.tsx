@@ -159,34 +159,18 @@ export function NotificationBell() {
         <Bell className="h-[18px] w-[18px]" />
         {unread > 0 && (
           <span
-            className={`absolute top-1.5 right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white ring-2 ring-white ${justArrived ? 'animate-pulse-fast' : ''}`}
-            style={justArrived ? { animation: 'pulseFast 600ms ease-out 2' } : undefined}
+            className={`absolute top-1.5 right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white ring-2 ring-white ${justArrived ? 'animate-bell-pulse' : ''}`}
           >
             {unread > 9 ? '9+' : unread}
           </span>
         )}
       </button>
 
-      <style jsx>{`
-        @keyframes pulseFast {
-          0%, 100% { transform: scale(1); }
-          50% { transform: scale(1.35); }
-        }
-      `}</style>
-
       {open && (
         <div
           ref={panelRef}
-          className="absolute right-0 top-full mt-2 w-[380px] rounded-2xl bg-white border border-gray-200 shadow-xl overflow-hidden z-50 origin-top-right"
-          style={{ animation: 'bellIn 180ms ease-out' }}
+          className="absolute right-0 top-full mt-2 w-[380px] rounded-2xl bg-white border border-gray-200 shadow-xl overflow-hidden z-50 origin-top-right animate-bell-in"
         >
-          <style jsx>{`
-            @keyframes bellIn {
-              from { opacity: 0; transform: translateY(-4px) scale(0.98); }
-              to   { opacity: 1; transform: translateY(0) scale(1); }
-            }
-          `}</style>
-
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <p className="text-sm font-semibold text-gray-900">Notifications</p>
