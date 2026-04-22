@@ -36,7 +36,6 @@ function formatTime(iso: string) {
 export function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [open, setOpen] = useState(false)
-  const [resolvedColExists, setResolvedColExists] = useState<boolean | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
 
@@ -65,7 +64,6 @@ export function NotificationBell() {
 
     if (firstTry.error) { setNotifications([]); return }
     const rows = (firstTry.data as Notification[]) ?? []
-    setResolvedColExists(rows.some(r => 'resolved_at' in r) ? true : null)
     setNotifications(rows.filter(n => !n.resolved_at))
   }
 
@@ -99,7 +97,6 @@ export function NotificationBell() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => load())
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
