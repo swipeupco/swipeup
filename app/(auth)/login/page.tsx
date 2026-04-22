@@ -59,25 +59,32 @@ export default function LoginPage() {
     </div>
   )
 
+  if (mode === 'sent') {
+    return (
+      <div className="w-full max-w-sm">
+        {logo}
+        <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-8 shadow-2xl text-center">
+          <p className="text-lg font-bold text-white mb-2">Check your email</p>
+          <p className="text-sm text-zinc-400 mb-6">
+            If an account exists for <span className="text-white">{email}</span>, you&apos;ll receive a reset link shortly.
+          </p>
+          <button
+            onClick={() => { setMode('login'); setError(null) }}
+            className="text-sm font-medium text-zinc-400 hover:text-white transition-colors"
+          >
+            ← Back to sign in
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="w-full max-w-sm">
       {logo}
 
       <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-8 shadow-2xl">
-        {mode === 'sent' ? (
-          <div className="text-center py-4">
-            <p className="text-lg font-bold text-white mb-2">Check your email</p>
-            <p className="text-sm text-zinc-400 mb-6">
-              If an account exists for <span className="text-white">{email}</span>, you&apos;ll receive a reset link shortly.
-            </p>
-            <button
-              onClick={() => { setMode('login'); setError(null) }}
-              className="text-sm font-medium text-zinc-400 hover:text-white transition-colors"
-            >
-              ← Back to sign in
-            </button>
-          </div>
-        ) : mode === 'forgot' ? (
+        {mode === 'forgot' ? (
           <>
             <h1 className="text-xl font-bold text-white mb-1">Reset password</h1>
             <p className="text-sm text-zinc-400 mb-6">We&apos;ll send a reset link to your email.</p>
