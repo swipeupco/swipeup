@@ -23,8 +23,11 @@ interface Client {
 interface BriefCounts {
   backlog: number
   in_production: number
-  ready_for_review: number
   approved: number
+  // Awaiting-client-review briefs are rolled into in_production for display
+  // (per-client boards mirror the client portal's 3-column layout), but we
+  // track the count separately to drive the Attention filter.
+  awaiting_client_review: number
 }
 
 interface ClientUser { id: string; name: string | null; email: string | null }
@@ -46,11 +49,11 @@ function portalUrl(slug: string) {
   return `https://${slug}.${root}`
 }
 
-const STRIP_STAGES: Array<{ key: keyof BriefCounts; label: string; shortLabel: string }> = [
-  { key: 'backlog',          label: 'Backlog',          shortLabel: 'Backlog' },
-  { key: 'in_production',    label: 'In Production',    shortLabel: 'In Prod' },
-  { key: 'ready_for_review', label: 'Ready for Review', shortLabel: 'Review' },
-  { key: 'approved',         label: 'Approved',         shortLabel: 'Approved' },
+// Mini-strip mirrors the per-client board's 3 columns exactly.
+const STRIP_STAGES: Array<{ key: 'backlog' | 'in_production' | 'approved'; label: string; shortLabel: string }> = [
+  { key: 'backlog',       label: 'Backlog',       shortLabel: 'Backlog' },
+  { key: 'in_production', label: 'In Production', shortLabel: 'In Prod' },
+  { key: 'approved',      label: 'Approved',      shortLabel: 'Approved' },
 ]
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -83,14 +86,14 @@ export default function ClientsOverview() {
 
     const { data: briefs } = await supabase.from('briefs').select('client_id, pipeline_status')
     const map: Record<string, BriefCounts> = {}
-    clientRows.forEach(c => { map[c.id] = { backlog: 0, in_production: 0, ready_for_review: 0, approved: 0 } })
+    clientRows.forEach(c => { map[c.id] = { backlog: 0, in_production: 0, approved: 0, awaiting_client_review: 0 } })
     briefs?.forEach(b => {
       if (!b.client_id || !map[b.client_id]) return
       const s = b.pipeline_status
-      if (s === 'backlog')        map[b.client_id].backlog++
-      else if (s === 'approved')   map[b.client_id].approved++
-      else if (s === 'client_review') map[b.client_id].ready_for_review++
-      else                         map[b.client_id].in_production++ // in_production + qa_review
+      if (s === 'backlog')             map[b.client_id].backlog++
+      else if (s === 'approved')        map[b.client_id].approved++
+      else if (s === 'client_review') { map[b.client_id].in_production++; map[b.client_id].awaiting_client_review++ }
+      else                              map[b.client_id].in_production++ // in_production + qa_review
     })
     setCounts(map)
     setLoading(false)
@@ -102,16 +105,16 @@ export default function ClientsOverview() {
     const q = query.trim().toLowerCase()
     let list = clients
     if (q) list = list.filter(c => c.name.toLowerCase().includes(q))
-    if (attentionOnly) list = list.filter(c => (counts[c.id]?.ready_for_review ?? 0) > 0)
+    if (attentionOnly) list = list.filter(c => (counts[c.id]?.awaiting_client_review ?? 0) > 0)
     return list
   }, [clients, counts, query, attentionOnly])
 
   const totalActive = useMemo(() =>
-    Object.values(counts).reduce((s, c) => s + c.in_production + c.ready_for_review, 0),
+    Object.values(counts).reduce((s, c) => s + c.in_production, 0),
   [counts])
 
   const attentionCount = useMemo(() =>
-    Object.values(counts).filter(c => c.ready_for_review > 0).length,
+    Object.values(counts).filter(c => c.awaiting_client_review > 0).length,
   [counts])
 
   // ─── Expansion handlers ──────────────────────────────────────────────────────
@@ -245,7 +248,7 @@ export default function ClientsOverview() {
       ) : (
         <div className="space-y-2">
           {filtered.map(client => {
-            const c = counts[client.id] ?? { backlog: 0, in_production: 0, ready_for_review: 0, approved: 0 }
+            const c = counts[client.id] ?? { backlog: 0, in_production: 0, approved: 0, awaiting_client_review: 0 }
             const isExpanded = expandedSection?.clientId === client.id
             return (
               <ClientRow
@@ -318,7 +321,7 @@ function ClientRow({
   loadingUsers: boolean
   staff: StaffMember[]
   onOpenBoard: () => void
-  onStageClick: (key: keyof BriefCounts) => void
+  onStageClick: (key: 'backlog' | 'in_production' | 'approved') => void
   onOpenUsers: () => void
   onOpenBranding: () => void
   onOpenAccess: () => void
@@ -333,7 +336,9 @@ function ClientRow({
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
-  const totalBriefs = counts.backlog + counts.in_production + counts.ready_for_review + counts.approved
+  // counts.awaiting_client_review is already counted in counts.in_production,
+  // so the total doesn't double-count.
+  const totalBriefs = counts.backlog + counts.in_production + counts.approved
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -367,10 +372,11 @@ function ClientRow({
 
         {/* Middle: mini pipeline strip */}
         <div className="flex-1 flex items-center gap-1 min-w-0">
-          {STRIP_STAGES.map((stage, idx) => {
+          {STRIP_STAGES.map(stage => {
             const n = counts[stage.key]
-            const isReview = stage.key === 'ready_for_review'
-            const highlight = isReview && n > 0
+            // In Production chip highlights when any briefs are currently with the client —
+            // same visual cue the "Attention required" filter picks up.
+            const highlight = stage.key === 'in_production' && counts.awaiting_client_review > 0
             return (
               <button
                 key={stage.key}
@@ -380,7 +386,10 @@ function ClientRow({
                     ? 'bg-[var(--brand-soft)] hover:bg-[var(--brand)]/20'
                     : 'bg-[var(--surface-2)] hover:bg-[var(--surface-3)]'
                 }`}
-                title={`Jump to ${stage.label}`}
+                title={highlight
+                  ? `${stage.label} · ${counts.awaiting_client_review} awaiting client review`
+                  : `Jump to ${stage.label}`
+                }
               >
                 <span className={`text-[10px] font-semibold uppercase tracking-wide truncate ${
                   highlight ? 'text-[var(--brand)]' : 'text-[var(--text-muted)]'

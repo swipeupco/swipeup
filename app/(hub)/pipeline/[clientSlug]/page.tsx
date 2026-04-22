@@ -37,21 +37,26 @@ const TYPE_ICON: Record<string, typeof Video> = {
 
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'portal.swipeupco.com'
 
-// Hub client-board columns: 4 stages. Revisions is handled as a badge on the
-// In Production card, not as its own column (per Task 3 brief).
+// Hub per-client board: mirrors the client portal exactly — 3 columns only.
+// "Ready for Review" is an internal-only stage and lives only on the master
+// Production Pipeline view; briefs awaiting client review (pipeline_status =
+// 'client_review') surface in the In Production column with a "With client"
+// badge on the card.
 const COLUMNS: Array<{ key: string; label: string; matches: (b: Brief) => boolean }> = [
-  { key: 'backlog',          label: 'Backlog',          matches: b => b.pipeline_status === 'backlog' },
-  { key: 'in_production',    label: 'In Production',    matches: b => b.pipeline_status === 'in_production' || b.pipeline_status === 'qa_review' },
-  { key: 'ready_for_review', label: 'Ready for Review', matches: b => b.pipeline_status === 'client_review' },
-  { key: 'approved',         label: 'Approved',         matches: b => b.pipeline_status === 'approved' },
+  { key: 'backlog',       label: 'Backlog',       matches: b => b.pipeline_status === 'backlog' },
+  { key: 'in_production', label: 'In Production', matches: b =>
+      b.pipeline_status === 'in_production' ||
+      b.pipeline_status === 'qa_review' ||
+      b.pipeline_status === 'client_review'
+  },
+  { key: 'approved',      label: 'Approved',      matches: b => b.pipeline_status === 'approved' },
 ]
 
-// Map a Hub column key back to a pipeline_status for DB writes
+// Map a Hub column key back to a pipeline_status for DB writes on drag-drop.
 const HUB_COL_TO_STATUS: Record<string, string> = {
-  backlog: 'backlog',
+  backlog:       'backlog',
   in_production: 'in_production',
-  ready_for_review: 'client_review',
-  approved: 'approved',
+  approved:      'approved',
 }
 
 export default function ClientPipeline({ params }: { params: Promise<{ clientSlug: string }> }) {
@@ -308,7 +313,8 @@ function HubBriefCard({ brief, staff, commentCount, clientColor, onClick, onAssi
   onAssign: (staffId: string | null) => void
 }) {
   const TypeIcon = brief.content_type ? (TYPE_ICON[brief.content_type] ?? CircleDot) : null
-  const isRevisions = brief.internal_status === 'revisions_required'
+  const isRevisions      = brief.internal_status === 'revisions_required'
+  const isAwaitingClient = brief.pipeline_status === 'client_review'
   const hasDraft = !!brief.draft_url
 
   return (
@@ -337,7 +343,12 @@ function HubBriefCard({ brief, staff, commentCount, clientColor, onClick, onAssi
                 Revisions
               </span>
             )}
-            {hasDraft && !isRevisions && (
+            {isAwaitingClient && !isRevisions && (
+              <span className="text-[10px] font-semibold rounded-full px-2 py-0.5 bg-blue-500/10 border border-blue-500/30 text-blue-400">
+                With client
+              </span>
+            )}
+            {hasDraft && !isRevisions && !isAwaitingClient && (
               <span className="text-[10px] font-semibold rounded-full px-2 py-0.5 bg-[var(--brand-soft)] border border-[var(--brand)]/30 text-[var(--brand)]">
                 Draft ready
               </span>
