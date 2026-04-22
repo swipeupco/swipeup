@@ -1,16 +1,17 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import {
   Video, Image, Mail, LayoutGrid, Mic, FileText, CircleDot,
-  User, Loader2, X, Check, ChevronDown, ExternalLink, Clock, AlertTriangle, ArrowRight,
+  User, Loader2, X, Check, ChevronDown, Clock, AlertTriangle,
+  Play, Send,
 } from 'lucide-react'
+import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd'
 import { createClient } from '@/lib/supabase/client'
 import { format } from 'date-fns'
 import { BriefDrawer } from '@/components/pipeline/BriefDrawer'
 import { INTERNAL_STAGES } from '@/lib/pipeline/stages'
-
-// ─── Content Types ────────────────────────────────────────────────────────────
+import { updateBriefStatus } from '@/lib/pipeline/updateBriefStatus'
 
 const CONTENT_TYPES = [
   { id: 'Video',     icon: Video,      color: '#22c55e' },
@@ -21,8 +22,6 @@ const CONTENT_TYPES = [
   { id: 'Script',    icon: FileText,   color: '#f59e0b' },
   { id: 'Other',     icon: CircleDot,  color: '#94a3b8' },
 ]
-
-// ─── Interfaces ───────────────────────────────────────────────────────────────
 
 interface PipelineBrief {
   id: string
@@ -58,13 +57,9 @@ interface ClientRow {
   logo: string | null
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function stageFor(b: PipelineBrief): string {
   const s = b.internal_status ?? ''
   if (INTERNAL_STAGES.find(st => st.key === s)) return s
-  // Legacy mapping
-  if (s === 'ready_for_review') return 'in_review'
   if (b.pipeline_status === 'approved') return 'approved_by_client'
   return 'in_production'
 }
@@ -191,33 +186,30 @@ function ClientAssignmentPanel({ clients, staff, assignments, onSet }: {
             {clients.length === 0 && (
               <p className="text-xs text-zinc-400 px-4 py-6 text-center">No active clients in pipeline</p>
             )}
-            {clients.map(client => {
-              const assignedId = assignments[client.id] ?? null
-              return (
-                <div key={client.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-zinc-50 last:border-0">
-                  <div
-                    className="h-6 w-6 rounded-md flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0 overflow-hidden"
-                    style={{ backgroundColor: client.color }}
-                  >
-                    {client.logo
-                      ? <img src={client.logo} alt="" className="h-full w-full object-contain p-0.5" />
-                      : client.name.slice(0, 2).toUpperCase()
-                    }
-                  </div>
-                  <span className="text-xs font-medium text-zinc-700 flex-1 truncate">{client.name}</span>
-                  <select
-                    value={assignedId ?? ''}
-                    onChange={e => onSet(client.id, e.target.value || null)}
-                    className="text-[11px] text-zinc-600 border border-zinc-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300"
-                  >
-                    <option value="">Unassigned</option>
-                    {staff.map(s => (
-                      <option key={s.id} value={s.id}>{s.name ?? s.email}</option>
-                    ))}
-                  </select>
+            {clients.map(client => (
+              <div key={client.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-zinc-50 last:border-0">
+                <div
+                  className="h-6 w-6 rounded-md flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0 overflow-hidden"
+                  style={{ backgroundColor: client.color }}
+                >
+                  {client.logo
+                    ? <img src={client.logo} alt="" className="h-full w-full object-contain p-0.5" />
+                    : client.name.slice(0, 2).toUpperCase()
+                  }
                 </div>
-              )
-            })}
+                <span className="text-xs font-medium text-zinc-700 flex-1 truncate">{client.name}</span>
+                <select
+                  value={assignments[client.id] ?? ''}
+                  onChange={e => onSet(client.id, e.target.value || null)}
+                  className="text-[11px] text-zinc-600 border border-zinc-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                >
+                  <option value="">Unassigned</option>
+                  {staff.map(s => (
+                    <option key={s.id} value={s.id}>{s.name ?? s.email}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -225,25 +217,105 @@ function ClientAssignmentPanel({ clients, staff, assignments, onSet }: {
   )
 }
 
+// ─── Kanban Columns ──────────────────────────────────────────────────────────
+
+function KanbanColumns({ stages, byStage, staff, isAdmin, onSelect, onAssign, onPushToClient }: {
+  stages: typeof INTERNAL_STAGES
+  byStage: Record<string, PipelineBrief[]>
+  staff: StaffMember[]
+  isAdmin: boolean
+  onSelect: (b: PipelineBrief) => void
+  onAssign: (briefId: string, uid: string | null) => void
+  onPushToClient: (briefId: string) => void
+}) {
+  return (
+    <div className="grid grid-cols-4 gap-4 items-start">
+      {stages.map(stage => (
+        <div
+          key={stage.key}
+          className="rounded-2xl overflow-hidden border border-zinc-100"
+          style={{ backgroundColor: stage.bgColor }}
+        >
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-black/5">
+            <span className="h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: stage.dotColor }} />
+            <h3 className="text-sm font-semibold text-zinc-800 flex-1">{stage.label}</h3>
+            <span
+              className="text-[11px] font-bold rounded-full px-2 py-0.5"
+              style={{ backgroundColor: `${stage.dotColor}22`, color: stage.dotColor }}
+            >
+              {byStage[stage.key].length}
+            </span>
+          </div>
+
+          <Droppable droppableId={stage.key}>
+            {(provided, snapshot) => (
+              <div
+                ref={provided.innerRef}
+                {...provided.droppableProps}
+                className={`p-3 space-y-3 min-h-[160px] transition-colors ${snapshot.isDraggingOver ? 'bg-black/5' : ''}`}
+              >
+                {byStage[stage.key].map((brief, index) => (
+                  <Draggable key={brief.id} draggableId={brief.id} index={index}>
+                    {(dragProvided, dragSnapshot) => (
+                      <div
+                        ref={dragProvided.innerRef}
+                        {...dragProvided.draggableProps}
+                        {...dragProvided.dragHandleProps}
+                      >
+                        <PipelineCard
+                          brief={brief}
+                          staff={staff}
+                          isAdmin={isAdmin}
+                          isDragging={dragSnapshot.isDragging}
+                          onClick={() => onSelect(brief)}
+                          onAssign={uid => onAssign(brief.id, uid)}
+                          onPushToClient={() => onPushToClient(brief.id)}
+                        />
+                      </div>
+                    )}
+                  </Draggable>
+                ))}
+                {provided.placeholder}
+                {byStage[stage.key].length === 0 && (
+                  <div className="rounded-xl border border-dashed border-zinc-200 py-10 text-center">
+                    <p className="text-xs text-zinc-400">Nothing here</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </Droppable>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ─── Pipeline Card ────────────────────────────────────────────────────────────
 
-function PipelineCard({ brief, staff, isAdmin, onClick, onAssign, onPushToClient }: {
+function PipelineCard({ brief, staff, isAdmin, onClick, onAssign, onPushToClient, isDragging }: {
   brief: PipelineBrief
   staff: StaffMember[]
   isAdmin: boolean
   onClick: () => void
   onAssign: (userId: string | null) => void
   onPushToClient: () => void
+  isDragging?: boolean
 }) {
   const typeInfo = CONTENT_TYPES.find(t => t.id === brief.content_type)
   const alreadySent = brief.pipeline_status === 'client_review' || brief.pipeline_status === 'approved'
 
+  const ghostBtn = 'flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-zinc-100 bg-white py-1.5 text-[11px] font-medium text-zinc-400 hover:border-zinc-200 hover:text-zinc-600 transition-colors'
+
   return (
     <div
       onClick={onClick}
-      className="rounded-2xl bg-white border border-zinc-100 shadow-sm hover:shadow-md transition-all cursor-pointer"
+      className={`rounded-2xl bg-white border transition-all cursor-pointer ${
+        isDragging
+          ? 'rotate-1 scale-[1.02] border-transparent shadow-2xl'
+          : 'border-zinc-100 shadow-sm hover:shadow-md'
+      }`}
+      style={isDragging ? { boxShadow: `0 0 0 2px ${brief.client_color}, 0 20px 40px ${brief.client_color}44` } : {}}
     >
-      {/* Cover or accent bar */}
       {brief.cover_url ? (
         <div className="h-24 rounded-t-2xl overflow-hidden">
           <img src={brief.cover_url} alt="" className="w-full h-full object-cover" />
@@ -253,7 +325,6 @@ function PipelineCard({ brief, staff, isAdmin, onClick, onAssign, onPushToClient
       )}
 
       <div className="p-3">
-        {/* Client logo + name + assignee */}
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-1.5 min-w-0">
             <div
@@ -270,7 +341,6 @@ function PipelineCard({ brief, staff, isAdmin, onClick, onAssign, onPushToClient
           <AssigneePicker brief={brief} staff={staff} isAdmin={isAdmin} onAssign={onAssign} />
         </div>
 
-        {/* Content type badge */}
         {typeInfo && (
           <span
             className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold mb-1.5"
@@ -281,10 +351,8 @@ function PipelineCard({ brief, staff, isAdmin, onClick, onAssign, onPushToClient
           </span>
         )}
 
-        {/* Brief name */}
         <p className="text-xs font-semibold text-zinc-800 leading-snug mb-2">{brief.name}</p>
 
-        {/* Due date */}
         {brief.due_date && (
           <span className="flex items-center gap-1 text-[10px] text-zinc-400 mb-2">
             <Clock className="h-2.5 w-2.5" />
@@ -292,42 +360,18 @@ function PipelineCard({ brief, staff, isAdmin, onClick, onAssign, onPushToClient
           </span>
         )}
 
-        {/* View draft + Push to client buttons — only when a link exists */}
-        {!alreadySent && brief.draft_url && (
-          <div className="flex gap-1.5 mt-1" onClick={e => e.stopPropagation()}>
-            <a
-              href={brief.draft_url ?? '#'}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={e => { if (!brief.draft_url) e.preventDefault() }}
-              className={`flex-1 flex items-center justify-center gap-1 rounded-lg py-1.5 text-[11px] font-semibold text-white bg-blue-500 hover:opacity-90 transition-opacity ${!brief.draft_url ? 'opacity-30 pointer-events-none' : ''}`}
-            >
-              <ExternalLink className="h-3 w-3" />
-              View draft
+        {brief.draft_url && (
+          <div className={`mt-1 ${!alreadySent ? 'flex gap-1.5' : ''}`} onClick={e => e.stopPropagation()}>
+            <a href={brief.draft_url} target="_blank" rel="noopener noreferrer" className={ghostBtn}>
+              <Play className="h-2.5 w-2.5" />
+              View Draft
             </a>
-            <button
-              onClick={e => { e.stopPropagation(); onPushToClient() }}
-              disabled={!brief.draft_url}
-              className="flex-1 flex items-center justify-center gap-1 rounded-lg py-1.5 text-[11px] font-semibold text-white bg-emerald-500 hover:opacity-90 disabled:opacity-30 transition-opacity"
-            >
-              Push to client
-              <ArrowRight className="h-3 w-3" />
-            </button>
-          </div>
-        )}
-
-        {/* Sent / approved state */}
-        {alreadySent && brief.draft_url && (
-          <div className="flex gap-1.5 mt-1" onClick={e => e.stopPropagation()}>
-            <a
-              href={brief.draft_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 flex items-center justify-center gap-1 rounded-lg py-1.5 text-[11px] font-semibold text-white bg-blue-500 hover:opacity-90 transition-opacity"
-            >
-              <ExternalLink className="h-3 w-3" />
-              View draft
-            </a>
+            {!alreadySent && (
+              <button onClick={e => { e.stopPropagation(); onPushToClient() }} className={ghostBtn}>
+                <Send className="h-2.5 w-2.5" />
+                Push to Client
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -346,74 +390,70 @@ export default function InternalPipeline() {
   const [isAdmin, setIsAdmin]                     = useState(false)
   const [myBriefsOnly, setMyBriefsOnly]           = useState(false)
   const [selected, setSelected]                   = useState<PipelineBrief | null>(null)
+  const [mounted, setMounted]                     = useState(false)
+
+  useEffect(() => { setMounted(true) }, [])
 
   async function load() {
     const supabase = createClient()
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) setCurrentUserId(user.id)
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      setCurrentUserId(user.id)
-      const { data: profile } = await supabase
-        .from('profiles').select('is_admin').eq('id', user.id).single()
-      setIsAdmin(profile?.is_admin ?? false)
+      const [
+        { data: profile },
+        { data: briefData },
+        { data: staffData },
+        { data: caData },
+      ] = await Promise.all([
+        user
+          ? supabase.from('profiles').select('is_admin').eq('id', user.id).single()
+          : Promise.resolve({ data: null, error: null }),
+        supabase
+          .from('briefs')
+          .select('id, name, description, campaign, content_type, pipeline_status, internal_status, draft_url, due_date, client_id, cover_url, assigned_to, created_at')
+          .eq('pipeline_status', 'in_production')
+          .not('internal_status', 'is', null)
+          .order('created_at', { ascending: false }),
+        supabase.from('profiles').select('id, name, avatar_url, email').or('is_staff.eq.true,is_admin.eq.true'),
+        supabase.from('client_assignments').select('client_id, assigned_to'),
+      ])
+
+      if (profile) setIsAdmin((profile as { is_admin?: boolean }).is_admin ?? false)
+      setStaff((staffData as StaffMember[]) ?? [])
+
+      const caMap: Record<string, string> = {}
+      caData?.forEach((ca: { client_id: string; assigned_to: string }) => { caMap[ca.client_id] = ca.assigned_to })
+      setClientAssignments(caMap)
+
+      if (!briefData?.length) { setBriefs([]); return }
+
+      const clientIds    = [...new Set(briefData.map((b: { client_id: string }) => b.client_id))]
+      const assigneeIds  = [...new Set(briefData.map((b: { assigned_to?: string | null }) => b.assigned_to).filter((id): id is string => !!id))]
+
+      const [{ data: clientData }, { data: rawAssignees }] = await Promise.all([
+        supabase.from('clients').select('id, name, color, logo_url').in('id', clientIds),
+        assigneeIds.length > 0
+          ? supabase.from('profiles').select('id, name, avatar_url').in('id', assigneeIds)
+          : Promise.resolve({ data: [], error: null }),
+      ])
+
+      const assigneeData = rawAssignees ?? []
+      setBriefs(briefData.map((b: Record<string, unknown>) => {
+        const client   = clientData?.find((c: { id: string }) => c.id === b.client_id)
+        const assignee = assigneeData.find((p: { id: unknown }) => p.id === b.assigned_to)
+        return {
+          ...b,
+          client_name:     (client as { name?: string })?.name          ?? 'Unknown',
+          client_color:    (client as { color?: string })?.color         ?? '#6366f1',
+          client_logo:     (client as { logo_url?: string | null })?.logo_url ?? null,
+          assignee_name:   (assignee as { name?: string | null } | undefined)?.name          ?? null,
+          assignee_avatar: (assignee as { avatar_url?: string | null } | undefined)?.avatar_url ?? null,
+        } as PipelineBrief
+      }))
+    } finally {
+      setLoading(false)
     }
-
-    const { data: briefData } = await supabase
-      .from('briefs')
-      .select('*')
-      .eq('pipeline_status', 'in_production')
-      .not('internal_status', 'is', null)
-      .order('created_at', { ascending: false })
-
-    if (!briefData?.length) { setBriefs([]); setLoading(false); return }
-
-    const clientIds = [...new Set(briefData.map((b: { client_id: string }) => b.client_id))]
-    const { data: clientData } = await supabase
-      .from('clients')
-      .select('id, name, color, logo_url')
-      .in('id', clientIds)
-
-    const assigneeIds = [
-      ...new Set(
-        briefData
-          .map((b: { assigned_to?: string | null }) => b.assigned_to)
-          .filter((id): id is string => !!id)
-      ),
-    ]
-    let assigneeData: { id: string; name: string | null; avatar_url: string | null }[] = []
-    if (assigneeIds.length > 0) {
-      const { data } = await supabase.from('profiles').select('id, name, avatar_url').in('id', assigneeIds)
-      assigneeData = data ?? []
-    }
-
-    const enriched: PipelineBrief[] = briefData.map((b: Record<string, unknown>) => {
-      const client   = clientData?.find((c: { id: string }) => c.id === b.client_id)
-      const assignee = assigneeData.find(p => p.id === b.assigned_to)
-      return {
-        ...b,
-        client_name:     (client as { name?: string })?.name    ?? 'Unknown',
-        client_color:    (client as { color?: string })?.color   ?? '#6366f1',
-        client_logo:     (client as { logo_url?: string | null })?.logo_url ?? null,
-        assignee_name:   assignee?.name         ?? null,
-        assignee_avatar: assignee?.avatar_url   ?? null,
-      } as PipelineBrief
-    })
-    setBriefs(enriched)
-
-    const { data: staffData } = await supabase
-      .from('profiles')
-      .select('id, name, avatar_url, email')
-      .or('is_staff.eq.true,is_admin.eq.true')
-    setStaff((staffData as StaffMember[]) ?? [])
-
-    const { data: caData } = await supabase
-      .from('client_assignments')
-      .select('client_id, assigned_to')
-    const caMap: Record<string, string> = {}
-    caData?.forEach((ca: { client_id: string; assigned_to: string }) => { caMap[ca.client_id] = ca.assigned_to })
-    setClientAssignments(caMap)
-
-    setLoading(false)
   }
 
   useEffect(() => {
@@ -428,19 +468,16 @@ export default function InternalPipeline() {
   }, [])
 
   async function moveInternal(briefId: string, newStatus: string) {
-    const supabase = createClient()
-    const updates: Record<string, string> = { internal_status: newStatus }
-    if (newStatus === 'approved_by_client') updates.pipeline_status = 'approved'
-    await supabase.from('briefs').update(updates).eq('id', briefId)
+    const extra = newStatus === 'approved_by_client' ? { pipeline_status: 'approved' } : {}
+    const updates = await updateBriefStatus(briefId, { internal_status: newStatus, ...extra })
     setBriefs(prev => prev.map(b => b.id === briefId ? { ...b, ...updates } : b))
     setSelected(prev => prev?.id === briefId ? { ...prev, ...updates } as PipelineBrief : prev)
   }
 
   async function moveClient(briefId: string, newStage: string) {
-    const supabase = createClient()
-    await supabase.from('briefs').update({ pipeline_status: newStage }).eq('id', briefId)
-    setBriefs(prev => prev.map(b => b.id === briefId ? { ...b, pipeline_status: newStage } : b))
-    setSelected(prev => prev?.id === briefId ? { ...prev, pipeline_status: newStage } as PipelineBrief : prev)
+    const updates = await updateBriefStatus(briefId, { pipeline_status: newStage })
+    setBriefs(prev => prev.map(b => b.id === briefId ? { ...b, ...updates } : b))
+    setSelected(prev => prev?.id === briefId ? { ...prev, ...updates } as PipelineBrief : prev)
   }
 
   async function assignBrief(briefId: string, userId: string | null) {
@@ -456,15 +493,8 @@ export default function InternalPipeline() {
   }
 
   async function pushBriefToClient(briefId: string) {
-    const supabase = createClient()
-    await supabase.from('briefs').update({
-      pipeline_status: 'client_review',
-      internal_status: 'in_review',
-    }).eq('id', briefId)
-    setBriefs(prev => prev.map(b => b.id === briefId
-      ? { ...b, pipeline_status: 'client_review', internal_status: 'in_review' }
-      : b
-    ))
+    const updates = await updateBriefStatus(briefId, { pipeline_status: 'client_review', internal_status: 'in_review' })
+    setBriefs(prev => prev.map(b => b.id === briefId ? { ...b, ...updates } : b))
   }
 
   async function setClientDefault(clientId: string, userId: string | null) {
@@ -473,10 +503,7 @@ export default function InternalPipeline() {
       await supabase.from('client_assignments').delete().eq('client_id', clientId)
       setClientAssignments(prev => { const n = { ...prev }; delete n[clientId]; return n })
     } else {
-      await supabase.from('client_assignments').upsert(
-        { client_id: clientId, assigned_to: userId },
-        { onConflict: 'client_id' },
-      )
+      await supabase.from('client_assignments').upsert({ client_id: clientId, assigned_to: userId }, { onConflict: 'client_id' })
       setClientAssignments(prev => ({ ...prev, [clientId]: userId }))
       setBriefs(prev => prev.map(b =>
         b.client_id === clientId && !b.assigned_to
@@ -486,19 +513,31 @@ export default function InternalPipeline() {
     }
   }
 
-  const filtered    = myBriefsOnly ? briefs.filter(b => b.assigned_to === currentUserId) : briefs
-  const byStage     = INTERNAL_STAGES.reduce((acc, stage) => {
-    acc[stage.key]  = filtered.filter(b => stageFor(b) === stage.key)
-    return acc
-  }, {} as Record<string, PipelineBrief[]>)
+  async function onDragEnd(result: DropResult) {
+    const { draggableId, destination } = result
+    if (!destination) return
+    const newStage = destination.droppableId
+    const brief = briefs.find(b => b.id === draggableId)
+    if (!brief || newStage === stageFor(brief)) return
+    await moveInternal(draggableId, newStage)
+  }
 
-  const uniqueClients: ClientRow[] = [
-    ...new Map(briefs.map(b => [b.client_id, {
+  const filtered = myBriefsOnly ? briefs.filter(b => b.assigned_to === currentUserId) : briefs
+
+  const byStage = useMemo(() =>
+    INTERNAL_STAGES.reduce((acc, stage) => {
+      acc[stage.key] = filtered.filter(b => stageFor(b) === stage.key)
+      return acc
+    }, {} as Record<string, PipelineBrief[]>),
+  [filtered])
+
+  const uniqueClients = useMemo<ClientRow[]>(() =>
+    [...new Map(briefs.map(b => [b.client_id, {
       id: b.client_id, name: b.client_name, color: b.client_color, logo: b.client_logo,
-    }])).values(),
-  ]
+    }])).values()],
+  [briefs])
 
-  const revisionsCount = briefs.filter(b => stageFor(b) === 'revisions_required').length
+  const revisionsCount = useMemo(() => briefs.filter(b => stageFor(b) === 'revisions_required').length, [briefs])
 
   if (loading) return (
     <div className="flex items-center justify-center h-[60vh]">
@@ -506,10 +545,20 @@ export default function InternalPipeline() {
     </div>
   )
 
+  const board = (
+    <KanbanColumns
+      stages={INTERNAL_STAGES}
+      byStage={byStage}
+      staff={staff}
+      isAdmin={isAdmin}
+      onSelect={setSelected}
+      onAssign={assignBrief}
+      onPushToClient={pushBriefToClient}
+    />
+  )
+
   return (
     <div className="p-6 space-y-5">
-
-      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold text-zinc-900">Production Pipeline</h1>
@@ -551,53 +600,9 @@ export default function InternalPipeline() {
         </div>
       </div>
 
-      {/* Kanban board */}
-      <div className="grid grid-cols-4 gap-4 items-start">
-        {INTERNAL_STAGES.map(stage => (
-          <div
-            key={stage.key}
-            className="rounded-2xl overflow-hidden border border-zinc-100"
-            style={{ backgroundColor: stage.bgColor }}
-          >
-            {/* Column header */}
-            <div className="flex items-center gap-2 px-4 py-3 border-b border-black/5">
-              <span
-                className="h-2 w-2 rounded-full flex-shrink-0"
-                style={{ backgroundColor: stage.dotColor }}
-              />
-              <h3 className="text-sm font-semibold text-zinc-800 flex-1">{stage.label}</h3>
-              <span
-                className="text-[11px] font-bold rounded-full px-2 py-0.5"
-                style={{ backgroundColor: `${stage.dotColor}22`, color: stage.dotColor }}
-              >
-                {byStage[stage.key].length}
-              </span>
-            </div>
+      {/* DragDropContext only after hydration to avoid SSR mismatch */}
+      {mounted ? <DragDropContext onDragEnd={onDragEnd}>{board}</DragDropContext> : board}
 
-            {/* Cards */}
-            <div className="p-3 space-y-3 min-h-[160px]">
-              {byStage[stage.key].map(brief => (
-                <PipelineCard
-                  key={brief.id}
-                  brief={brief}
-                  staff={staff}
-                  isAdmin={isAdmin}
-                  onClick={() => setSelected(brief)}
-                  onAssign={uid => assignBrief(brief.id, uid)}
-                  onPushToClient={() => pushBriefToClient(brief.id)}
-                />
-              ))}
-              {byStage[stage.key].length === 0 && (
-                <div className="rounded-xl border border-dashed border-zinc-200 py-10 text-center">
-                  <p className="text-xs text-zinc-400">Nothing here</p>
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Brief detail drawer */}
       {selected && (
         <BriefDrawer
           brief={selected}

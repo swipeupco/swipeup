@@ -3,14 +3,12 @@
 import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
-  X, ExternalLink, Send, Lock, MessageSquare, Link as LinkIcon,
-  ArrowRight, CheckCircle2, AlertTriangle,
+  X, Send, Lock, MessageSquare, Link as LinkIcon,
+  CheckCircle2, AlertTriangle, Play,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { CLIENT_STAGES, CLIENT_STAGE_LABELS, INTERNAL_STAGES, INTERNAL_STAGE_BADGES } from '@/lib/pipeline/stages'
 import { updateBriefStatus } from '@/lib/pipeline/updateBriefStatus'
-
-// ─── Interfaces ───────────────────────────────────────────────────────────────
 
 interface Brief {
   id: string
@@ -49,24 +47,6 @@ interface Props {
 
 const CLIENT_STAGE_KEYS = CLIENT_STAGES.map(s => s.key)
 
-// ─── Avatar helper ────────────────────────────────────────────────────────────
-
-function Avatar({ name, email, size = 32 }: { name: string | null; email: string | null; size?: number }) {
-  const label  = name ?? email?.split('@')[0] ?? '?'
-  const initials = label.slice(0, 2).toUpperCase()
-  // Deterministic colour from name
-  const colors = ['#6366f1','#8b5cf6','#ec4899','#14b8a6','#f59e0b','#10b981','#3b82f6']
-  const color  = colors[(label.charCodeAt(0) ?? 0) % colors.length]
-  return (
-    <div
-      className="rounded-full flex items-center justify-center text-white font-bold flex-shrink-0"
-      style={{ width: size, height: size, backgroundColor: color, fontSize: size * 0.38 }}
-    >
-      {initials}
-    </div>
-  )
-}
-
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function BriefDrawer({
@@ -80,20 +60,17 @@ export function BriefDrawer({
   const [draftUrl, setDraftUrl]     = useState(brief.draft_url ?? '')
   const [savingUrl, setSavingUrl]   = useState(false)
   const [urlSaved, setUrlSaved]     = useState(false)
-  const [currentUserName, setCurrentUserName] = useState<string | null>(null)
+  const [currentUserId, setCurrentUserId]   = useState<string | null>(null)
+  const [currentUserName, setCurrentUserName]   = useState<string | null>(null)
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null)
   const commentsEndRef = useRef<HTMLDivElement>(null)
   const textareaRef    = useRef<HTMLTextAreaElement>(null)
 
-  const internalStatus  = brief.internal_status ?? 'in_production'
-  const clientIndex     = CLIENT_STAGE_KEYS.indexOf(brief.pipeline_status)
-  const nextClientStage      = clientIndex < CLIENT_STAGE_KEYS.length - 1 ? CLIENT_STAGE_KEYS[clientIndex + 1] : null
-
+  const internalStatus = brief.internal_status ?? 'in_production'
   const clientComments   = comments.filter(c => !c.is_internal)
   const internalComments = comments.filter(c => c.is_internal)
   const hasClientFeedback = clientComments.length > 0
 
-  // Sync draft URL from prop
   useEffect(() => { setDraftUrl(brief.draft_url ?? '') }, [brief.draft_url])
 
   async function loadComments() {
@@ -107,11 +84,13 @@ export function BriefDrawer({
   }
 
   useEffect(() => {
+    if (!brief.id) return
     loadComments()
 
     const supabase = createClient()
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
+        setCurrentUserId(user.id)
         setCurrentUserEmail(user.email ?? null)
         supabase.from('profiles').select('name').eq('id', user.id).single()
           .then(({ data }) => setCurrentUserName(data?.name ?? null))
@@ -135,7 +114,6 @@ export function BriefDrawer({
     commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [comments])
 
-  // Keyboard shortcut: Cmd/Ctrl+Enter to send
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault()
@@ -147,18 +125,17 @@ export function BriefDrawer({
     if (!newComment.trim()) return
     setSending(true)
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
     await supabase.from('brief_comments').insert({
       brief_id:    brief.id,
       content:     newComment.trim(),
-      user_id:     user?.id,
-      user_email:  user?.email,
-      user_name:   currentUserName ?? user?.email?.split('@')[0] ?? 'Team',
+      user_id:     currentUserId,
+      user_email:  currentUserEmail,
+      user_name:   currentUserName ?? currentUserEmail?.split('@')[0] ?? 'Team',
       is_internal: isInternal,
     })
     setNewComment('')
     setSending(false)
-    await loadComments()
+    // Realtime subscription handles the refresh — no manual loadComments() needed
   }
 
   async function saveDraftUrl() {
@@ -196,28 +173,17 @@ export function BriefDrawer({
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
 
-      {/* Modal */}
       <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden">
 
-        {/* ── Cover image ── */}
         {brief.cover_url && (
           <div className="flex-shrink-0 w-full bg-black/80 max-h-48 overflow-hidden rounded-t-2xl">
-            <img
-              src={brief.cover_url}
-              alt=""
-              className="w-full max-h-48 object-contain"
-            />
+            <img src={brief.cover_url} alt="" className="w-full max-h-48 object-contain" />
           </div>
         )}
 
-        {/* ── Coloured header ── */}
-        <div
-          className="flex-shrink-0 px-6 py-4"
-          style={{ backgroundColor: clientColor }}
-        >
+        <div className="flex-shrink-0 px-6 py-4" style={{ backgroundColor: clientColor }}>
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1 min-w-0">
               {brief.campaign && (
@@ -227,7 +193,6 @@ export function BriefDrawer({
               )}
               <h2 className="font-bold text-white text-lg leading-snug">{brief.name}</h2>
 
-              {/* Badges row */}
               <div className="flex items-center gap-2 mt-2 flex-wrap">
                 {clientName && internalMode && (
                   <span className="text-[11px] font-semibold text-white/90 bg-white/20 rounded-full px-2.5 py-0.5">
@@ -264,16 +229,12 @@ export function BriefDrawer({
               <X className="h-5 w-5" />
             </button>
           </div>
-
         </div>
 
-        {/* ── Body: two columns ── */}
         <div className="flex flex-1 min-h-0 overflow-hidden divide-x divide-zinc-100">
 
-          {/* ── LEFT: Brief details ── */}
           <div className="flex-1 overflow-y-auto p-7 space-y-5">
 
-            {/* Description */}
             {brief.description && (
               <div>
                 <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Description</p>
@@ -283,7 +244,6 @@ export function BriefDrawer({
               </div>
             )}
 
-            {/* Draft link */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Draft Link</p>
@@ -302,7 +262,6 @@ export function BriefDrawer({
                     value={draftUrl}
                     onChange={e => setDraftUrl(e.target.value)}
                     onPaste={e => {
-                      // Auto-save on paste — no need to click Save
                       const pasted = e.clipboardData.getData('text').trim()
                       if (pasted.startsWith('http')) {
                         setTimeout(() => saveDraftUrl(), 50)
@@ -322,7 +281,6 @@ export function BriefDrawer({
               </div>
             </div>
 
-            {/* Due date */}
             {brief.due_date && (
               <div>
                 <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1">Due</p>
@@ -330,11 +288,9 @@ export function BriefDrawer({
               </div>
             )}
 
-            {/* ── Internal actions ── */}
             {internalMode && (
               <div className="space-y-2 pt-1">
 
-                {/* Revision alert */}
                 {internalStatus === 'revisions_required' && hasClientFeedback && (
                   <div className="flex items-start gap-2 rounded-xl bg-red-50 border border-red-100 px-3 py-2.5">
                     <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
@@ -344,7 +300,6 @@ export function BriefDrawer({
                   </div>
                 )}
 
-                {/* View draft + Push to client */}
                 {brief.pipeline_status !== 'client_review' && brief.pipeline_status !== 'approved' && (
                   <div className="flex gap-2 pt-1">
                     <a
@@ -352,23 +307,22 @@ export function BriefDrawer({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={e => { if (!brief.draft_url) e.preventDefault() }}
-                      className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-white bg-blue-500 hover:opacity-90 transition-opacity ${!brief.draft_url ? 'opacity-30 pointer-events-none' : ''}`}
+                      className={`flex-1 flex items-center justify-center gap-2 rounded-xl border border-zinc-100 bg-white py-2.5 text-sm font-medium text-zinc-400 hover:border-zinc-200 hover:text-zinc-600 transition-colors ${!brief.draft_url ? 'opacity-30 pointer-events-none' : ''}`}
                     >
-                      <ExternalLink className="h-4 w-4" />
-                      View draft
+                      <Play className="h-4 w-4" />
+                      View Draft
                     </a>
                     <button
                       onClick={pushToClientReview}
                       disabled={!brief.draft_url}
-                      className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-white bg-emerald-500 hover:opacity-90 disabled:opacity-30 transition-opacity"
+                      className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-zinc-100 bg-white py-2.5 text-sm font-medium text-zinc-400 hover:border-zinc-200 hover:text-zinc-600 disabled:opacity-30 transition-colors"
                     >
-                      Push to client
-                      <ArrowRight className="h-4 w-4" />
+                      <Send className="h-4 w-4" />
+                      Push to Client
                     </button>
                   </div>
                 )}
 
-                {/* Already with client */}
                 {brief.pipeline_status === 'client_review' && internalStatus !== 'approved_by_client' && (
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 rounded-xl bg-blue-50 border border-blue-100 px-3 py-2.5">
@@ -385,7 +339,6 @@ export function BriefDrawer({
                   </div>
                 )}
 
-                {/* Approved */}
                 {brief.pipeline_status === 'approved' && (
                   <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2.5">
                     <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" />
@@ -397,10 +350,8 @@ export function BriefDrawer({
             )}
           </div>
 
-          {/* ── RIGHT: Comments ── */}
           <div className="w-72 flex flex-col flex-shrink-0 bg-white">
 
-            {/* Comments header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100 flex-shrink-0">
               <div className="flex items-center gap-2">
                 <MessageSquare className="h-3.5 w-3.5 text-zinc-400" />
@@ -413,10 +364,8 @@ export function BriefDrawer({
               )}
             </div>
 
-            {/* Comment list */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
 
-              {/* Client feedback */}
               {clientComments.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center gap-1.5">
@@ -429,7 +378,6 @@ export function BriefDrawer({
                 </div>
               )}
 
-              {/* Internal notes */}
               {internalComments.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center gap-1.5">
@@ -453,10 +401,8 @@ export function BriefDrawer({
               <div ref={commentsEndRef} />
             </div>
 
-            {/* Comment input */}
             <div className="border-t border-zinc-100 p-3 flex-shrink-0 space-y-2.5">
 
-              {/* Internal / client visible toggle */}
               <div className="flex gap-1.5">
                 <button
                   type="button"
@@ -480,7 +426,6 @@ export function BriefDrawer({
                 </button>
               </div>
 
-              {/* Input + send */}
               <div className="flex items-end gap-2">
                 <textarea
                   ref={textareaRef}
@@ -523,20 +468,17 @@ export function BriefDrawer({
 // ─── Comment Bubble ───────────────────────────────────────────────────────────
 
 function CommentBubble({ comment, variant }: { comment: Comment; variant: 'client' | 'internal' }) {
-  const bg      = variant === 'client'   ? 'bg-blue-50 border-blue-100'   : 'bg-amber-50 border-amber-100'
-  const nameCol = variant === 'client'   ? 'text-blue-700'                : 'text-amber-700'
-  const textCol = variant === 'client'   ? 'text-blue-800'                : 'text-amber-800'
+  const bg      = variant === 'client' ? 'bg-blue-50 border-blue-100'   : 'bg-amber-50 border-amber-100'
+  const nameCol = variant === 'client' ? 'text-blue-700'                : 'text-amber-700'
+  const textCol = variant === 'client' ? 'text-blue-800'                : 'text-amber-800'
   const name    = comment.user_name ?? comment.user_email?.split('@')[0] ?? 'Unknown'
 
   return (
     <div className={`rounded-xl p-3 border ${bg}`}>
       <div className="flex items-center gap-2 mb-1.5">
-        {/* Avatar */}
         <div
           className="h-6 w-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0"
-          style={{
-            backgroundColor: variant === 'client' ? '#3b82f6' : '#f59e0b',
-          }}
+          style={{ backgroundColor: variant === 'client' ? '#3b82f6' : '#f59e0b' }}
         >
           {name.slice(0, 2).toUpperCase()}
         </div>
