@@ -3,7 +3,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
     <div
       className="min-h-screen flex items-center justify-center p-4"
       style={{
-        backgroundImage: 'url(/loginpage.png)',
+        backgroundImage: 'url(/bg.png)',
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundRepeat: 'no-repeat',

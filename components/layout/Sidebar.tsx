@@ -119,7 +119,7 @@ export function Sidebar() {
       <div className="px-5 py-4 border-t border-gray-100 flex flex-col items-center gap-2">
         <p className="text-xs text-gray-400">Built by</p>
         <Image
-          src="/swipeup-logo.png"
+          src="/SwipeUp_White.svg"
           alt="SwipeUp"
           width={100}
           height={28}
