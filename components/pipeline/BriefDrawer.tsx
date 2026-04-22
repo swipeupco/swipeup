@@ -116,11 +116,13 @@ export function BriefDrawer({
     setComments((data as Comment[]) ?? [])
   }
 
-  // Load mentionable users (client members + staff with access)
+  // Load mentionable users scoped to this brief's client board:
+  //  - profiles where client_id = brief.client_id (client members)
+  //  - staff with access to this client via staff_client_access
+  // Self is included so users can @mention themselves.
   useEffect(() => {
     const supabase = createClient()
     ;(async () => {
-      const { data: { user } } = await supabase.auth.getUser()
       const [clientRes, staffRes] = await Promise.all([
         supabase.from('profiles').select('id, name').eq('client_id', brief.client_id),
         supabase.from('staff_client_access').select('staff_id').eq('client_id', brief.client_id),
@@ -131,9 +133,9 @@ export function BriefDrawer({
         : []
       const merged: Record<string, { id: string; name: string }> = {}
       ;[...(clientRes.data ?? []), ...staffProfiles].forEach(p => {
-        if (p.name && p.id !== user?.id) merged[p.id] = { id: p.id, name: p.name }
+        if (p.name) merged[p.id] = { id: p.id, name: p.name }
       })
-      setMentionUsers(Object.values(merged))
+      setMentionUsers(Object.values(merged).sort((a, b) => a.name.localeCompare(b.name)))
     })()
   }, [brief.client_id])
 
@@ -251,9 +253,10 @@ export function BriefDrawer({
   }
 
   function renderCommentContent(content: string) {
-    const parts = content.split(/(@[\w-]+(?:\s[\w-]+)?)/g)
+    // Match only single-word @handles so trailing text stays default-coloured
+    const parts = content.split(/(@[\w-]+)/g)
     return parts.map((part, i) =>
-      part.startsWith('@')
+      /^@[\w-]+$/.test(part)
         ? <span key={i} className="font-semibold" style={{ color: '#4950F8' }}>{part}</span>
         : <span key={i}>{part}</span>
     )
@@ -661,7 +664,8 @@ function CommentBubble({ comment, variant }: { comment: Comment; variant: 'clien
   const bg   = variant === 'client' ? 'bg-blue-50 border-blue-100' : 'bg-amber-50 border-amber-100'
   const name = comment.user_name ?? comment.user_email?.split('@')[0] ?? 'Unknown'
 
-  const parts = (comment.content ?? '').split(/(@[\w-]+(?:\s[\w-]+)?)/g)
+  // Single-word @handle match; trailing text stays default-coloured
+  const parts = (comment.content ?? '').split(/(@[\w-]+)/g)
 
   return (
     <div className={`rounded-xl p-3 border ${bg}`}>
@@ -679,7 +683,7 @@ function CommentBubble({ comment, variant }: { comment: Comment; variant: 'clien
       </div>
       <p className="text-xs leading-relaxed text-gray-700 pl-8">
         {parts.map((part, i) =>
-          part.startsWith('@')
+          /^@[\w-]+$/.test(part)
             ? <span key={i} className="font-semibold" style={{ color: '#4950F8' }}>{part}</span>
             : <span key={i}>{part}</span>
         )}
