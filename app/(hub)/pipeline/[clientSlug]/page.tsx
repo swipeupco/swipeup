@@ -3,10 +3,24 @@
 import { useEffect, useState, use } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ExternalLink, Plus, X, Loader2 } from 'lucide-react'
+import {
+  ArrowLeft, ExternalLink, Plus, X, Loader2, Play,
+  Video, Image as ImageIcon, Mail, LayoutGrid, Mic, FileText, CircleDot,
+} from 'lucide-react'
+import { format } from 'date-fns'
 import { BriefDrawer } from '@/components/pipeline/BriefDrawer'
 import { CLIENT_STAGES as STAGES } from '@/lib/pipeline/stages'
 import { updateBriefStatus } from '@/lib/pipeline/updateBriefStatus'
+
+const CONTENT_TYPES = [
+  { id: 'Video',     icon: Video,      color: '#22c55e' },
+  { id: 'Graphic',   icon: ImageIcon,  color: '#f97316' },
+  { id: 'EDM',       icon: Mail,       color: '#ef4444' },
+  { id: 'Signage',   icon: LayoutGrid, color: '#0ea5e9' },
+  { id: 'Voiceover', icon: Mic,        color: '#a855f7' },
+  { id: 'Script',    icon: FileText,   color: '#f59e0b' },
+  { id: 'Other',     icon: CircleDot,  color: '#94a3b8' },
+]
 
 interface Client {
   id: string
@@ -26,9 +40,8 @@ interface Brief {
   draft_url: string | null
   due_date: string | null
   client_id: string
+  cover_url?: string | null
 }
-
-const CONTENT_TYPES = ['Video', 'Graphic', 'EDM', 'Signage', 'Voiceover', 'Script', 'Other']
 
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'portal.swipeupco.com'
 
@@ -245,56 +258,108 @@ function BriefCard({ brief, stageKey, clientColor, onClick, onMove }: {
   onClick: () => void
   onMove: (id: string, stage: string) => void
 }) {
-  const stageKeys = STAGES.map(s => s.key)
+  const stageKeys    = STAGES.map(s => s.key)
   const currentIndex = stageKeys.indexOf(stageKey)
-  const nextStage = currentIndex < stageKeys.length - 1 ? stageKeys[currentIndex + 1] : null
-  const nextLabel = nextStage ? STAGES[currentIndex + 1].label : null
-  const isRevisions = brief.internal_status === 'revisions_required'
-  const hasDraft = !!brief.draft_url
+  const nextStage    = currentIndex < stageKeys.length - 1 ? stageKeys[currentIndex + 1] : null
+  const nextLabel    = nextStage ? STAGES[currentIndex + 1].label : null
+  const isRevisions  = brief.internal_status === 'revisions_required'
+  const hasDraft     = !!brief.draft_url
+  const typeInfo     = CONTENT_TYPES.find(t => t.id === brief.content_type)
 
   return (
     <div
       onClick={onClick}
-      className="bg-white rounded-xl border border-zinc-200 p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+      className="rounded-2xl bg-white border border-gray-100 shadow-sm hover:shadow-md p-4 cursor-pointer transition-all"
     >
-      <p className="text-sm font-semibold text-zinc-800 leading-snug mb-1">{brief.name}</p>
+      {/* Thumbnail / Cover */}
+      <div className="relative h-28 rounded-xl mb-3 overflow-hidden">
+        {brief.cover_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={brief.cover_url} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <div
+            className="h-full w-full flex items-center justify-center"
+            style={{ background: `linear-gradient(135deg, ${typeInfo?.color ?? '#6366f1'}22 0%, ${typeInfo?.color ?? '#6366f1'}44 100%)` }}
+          >
+            {typeInfo ? (
+              <typeInfo.icon className="h-10 w-10 opacity-30" style={{ color: typeInfo.color }} />
+            ) : (
+              <div className="h-10 w-10 rounded-full bg-gray-200 opacity-50" />
+            )}
+          </div>
+        )}
 
-      {brief.campaign && (
-        <p className="text-xs text-zinc-400 mb-2 truncate">{brief.campaign}</p>
+        {brief.campaign && (
+          <div className="absolute top-2 right-2 rounded-lg bg-black/60 backdrop-blur-sm px-2 py-1 max-w-[130px]">
+            <p className="text-[10px] font-semibold text-white truncate">{brief.campaign}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Content type chip */}
+      {typeInfo && (
+        <span
+          className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold mb-2"
+          style={{ backgroundColor: `${typeInfo.color}18`, color: typeInfo.color }}
+        >
+          {typeInfo.id}
+        </span>
       )}
 
-      <div className="flex items-center gap-1.5 flex-wrap mt-2">
-        {brief.content_type && (
-          <span className="text-[10px] font-medium rounded-full px-2 py-0.5 bg-zinc-100 text-zinc-600">
-            {brief.content_type}
+      {/* Title */}
+      <p className="text-sm font-semibold text-gray-800 leading-snug">{brief.name}</p>
+
+      {/* Status badges */}
+      <div className="flex gap-1.5 flex-wrap mt-2 mb-3">
+        {isRevisions && (
+          <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-red-50 text-red-500 border border-red-100">
+            Revisions requested
           </span>
         )}
-        {hasDraft && (
-          <span className="text-[10px] font-medium rounded-full px-2 py-0.5 bg-teal-50 text-teal-700">
+        {hasDraft && !isRevisions && (
+          <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-emerald-50 text-emerald-600 border border-emerald-100">
             Draft ready
           </span>
         )}
-        {isRevisions && (
-          <span className="text-[10px] font-medium rounded-full px-2 py-0.5 bg-red-50 text-red-600">
-            Revisions
-          </span>
-        )}
         {brief.due_date && (
-          <span className="text-[10px] font-medium rounded-full px-2 py-0.5 bg-zinc-100 text-zinc-500">
-            Due {new Date(brief.due_date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+          <span className="rounded-full px-2 py-0.5 text-[10px] font-medium bg-gray-50 text-gray-400 border border-gray-100">
+            Due {format(new Date(brief.due_date), 'd MMM')}
           </span>
         )}
       </div>
 
-      {nextStage && (
-        <button
-          onClick={e => { e.stopPropagation(); onMove(brief.id, nextStage) }}
-          className="mt-2.5 w-full text-[10px] font-semibold rounded-lg py-1.5 text-white transition-opacity hover:opacity-90"
-          style={{ backgroundColor: clientColor }}
-        >
-          Move to {nextLabel} →
-        </button>
-      )}
+      {/* Action row — mirrors Portal's View Draft + primary action layout */}
+      <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+        {hasDraft ? (
+          <a
+            href={brief.draft_url!}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            <Play className="h-3 w-3" />
+            View Draft
+          </a>
+        ) : (
+          <button
+            disabled
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-gray-100 py-2 text-xs font-medium text-gray-300 cursor-not-allowed"
+          >
+            <Play className="h-3 w-3" />
+            View Draft
+          </button>
+        )}
+
+        {nextStage && (
+          <button
+            onClick={e => { e.stopPropagation(); onMove(brief.id, nextStage) }}
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ backgroundColor: clientColor }}
+          >
+            {nextLabel} →
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -389,16 +454,16 @@ function CreateBriefModal({ clientId, clientColor, clientName, onClose, onCreate
             <div className="flex gap-2 flex-wrap">
               {CONTENT_TYPES.map(t => (
                 <button
-                  key={t}
+                  key={t.id}
                   type="button"
-                  onClick={() => setContentType(contentType === t ? '' : t)}
+                  onClick={() => setContentType(contentType === t.id ? '' : t.id)}
                   className={`rounded-full px-3 py-1 text-xs font-medium border transition-all ${
-                    contentType === t
+                    contentType === t.id
                       ? 'text-white border-transparent bg-zinc-900'
                       : 'bg-white border-zinc-200 text-zinc-600 hover:border-zinc-300'
                   }`}
                 >
-                  {t}
+                  {t.id}
                 </button>
               ))}
             </div>

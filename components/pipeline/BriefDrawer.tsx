@@ -523,29 +523,24 @@ export function BriefDrawer({
 // ─── Comment Bubble ───────────────────────────────────────────────────────────
 
 function CommentBubble({ comment, variant }: { comment: Comment; variant: 'client' | 'internal' }) {
-  const bg      = variant === 'client'   ? 'bg-blue-50 border-blue-100'   : 'bg-amber-50 border-amber-100'
-  const nameCol = variant === 'client'   ? 'text-blue-700'                : 'text-amber-700'
-  const textCol = variant === 'client'   ? 'text-blue-800'                : 'text-amber-800'
-  const name    = comment.user_name ?? comment.user_email?.split('@')[0] ?? 'Unknown'
+  const bg   = variant === 'client' ? 'bg-blue-50 border-blue-100' : 'bg-amber-50 border-amber-100'
+  const name = comment.user_name ?? comment.user_email?.split('@')[0] ?? 'Unknown'
 
   return (
     <div className={`rounded-xl p-3 border ${bg}`}>
       <div className="flex items-center gap-2 mb-1.5">
-        {/* Avatar */}
         <div
           className="h-6 w-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0"
-          style={{
-            backgroundColor: variant === 'client' ? '#3b82f6' : '#f59e0b',
-          }}
+          style={{ backgroundColor: variant === 'client' ? '#3b82f6' : '#f59e0b' }}
         >
           {name.slice(0, 2).toUpperCase()}
         </div>
-        <span className={`text-[11px] font-semibold ${nameCol} flex-1`}>{name}</span>
+        <span className="text-[11px] font-semibold text-gray-800 flex-1">{name}</span>
         <span className="text-[10px] text-zinc-400 flex-shrink-0">
           {format(new Date(comment.created_at), 'd MMM · h:mm a')}
         </span>
       </div>
-      <p className={`text-xs leading-relaxed ${textCol} pl-8`}>{comment.content}</p>
+      <p className="text-xs leading-relaxed text-gray-700 pl-8">{comment.content}</p>
     </div>
   )
 }
