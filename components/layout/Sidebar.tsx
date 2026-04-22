@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { LayoutGrid, Kanban, LayoutDashboard, Settings } from 'lucide-react'
 
@@ -20,16 +21,22 @@ export function Sidebar() {
 
   return (
     <aside className="fixed inset-y-0 left-0 z-30 flex w-60 flex-col border-r border-[var(--border)] bg-[var(--surface)]">
-      {/* Brand block */}
-      <div className="flex items-center gap-2.5 px-5 py-4 border-b border-[var(--border)] min-h-[56px]">
-        <div className="h-7 w-7 rounded-lg flex items-center justify-center text-white text-xs font-bold flex-shrink-0 bg-[var(--brand)]">
-          SU
-        </div>
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-sm font-bold text-[var(--text)]">SwipeUp</span>
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-dim)]">Hub</span>
-        </div>
-      </div>
+      {/* Brand block — SwipeUp logo top-left.
+          SwipeUp_White.svg is white; in light mode we invert to near-black. */}
+      <Link
+        href="/"
+        aria-label="SwipeUp Hub — home"
+        className="flex items-center px-5 py-4 border-b border-[var(--border)] min-h-[56px] hover:opacity-80 transition-opacity"
+      >
+        <Image
+          src="/SwipeUp_White.svg"
+          alt="SwipeUp"
+          width={120}
+          height={28}
+          priority
+          className="h-6 w-auto dark:[filter:none] [filter:invert(1)]"
+        />
+      </Link>
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">

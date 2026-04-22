@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, LogOut, Settings as SettingsIcon, User } from 'lucide-react'
@@ -105,18 +104,6 @@ export function TopBar() {
         )}
       </div>
 
-      <Link href="/" className="flex items-center gap-2 pl-2 border-l border-[var(--border)]" aria-label="SwipeUp Hub">
-        {/* SwipeUp_White.svg is white. In dark mode it renders as-is;
-            in light mode we invert(1) to render near-black. */}
-        <Image
-          src="/SwipeUp_White.svg"
-          alt="SwipeUp"
-          width={96}
-          height={22}
-          priority
-          className="h-5 w-auto dark:[filter:none] [filter:invert(1)]"
-        />
-      </Link>
     </header>
   )
 }
