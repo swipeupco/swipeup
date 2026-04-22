@@ -72,12 +72,24 @@ const COLUMNS: Array<{ key: ColumnKey; label: string; helper: string }> = [
   { key: 'approved',         label: 'Approved',         helper: 'Client approved · shipped' },
 ]
 
+/** Map a brief onto its Hub column.
+ *
+ *  Backlog is the default bucket for anything sitting at
+ *  pipeline_status='in_production' that hasn't been moved through Hub stages
+ *  yet — so every Portal-created brief surfaces here on arrival, regardless
+ *  of whether it's been auto-assigned to a designer. A brief leaves Backlog
+ *  as soon as one of the "active" signals fires: a draft link is attached,
+ *  the client requests revisions, internal review is triggered, the client
+ *  is reviewing, or the brief is approved.
+ */
 function columnFor(b: PipelineBrief): ColumnKey {
   if (b.pipeline_status === 'approved') return 'approved'
+  if (b.internal_status === 'approved_by_client') return 'approved'
   if (b.pipeline_status === 'client_review') return 'ready_for_review' // with client — still ready-for-review on Hub
   if (b.internal_status === 'in_review') return 'ready_for_review'
-  if (!b.assigned_to && b.internal_status === 'in_production' && !b.draft_url) return 'backlog'
-  return 'in_production'
+  if (b.internal_status === 'revisions_required') return 'in_production'
+  if (b.draft_url) return 'in_production'
+  return 'backlog'
 }
 
 /** Convert a target column back to the (pipeline_status, internal_status) pair we write to DB. */
