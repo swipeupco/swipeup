@@ -45,16 +45,27 @@ export function NotificationBell() {
 
   async function load() {
     const supabase = createClient()
-    // Try selecting with resolved_at; fall back if the column isn't deployed yet
-    const firstTry = await supabase
+    // Prefer filtering at the DB level once resolved_at is deployed;
+    // fall back to client-side filter pre-migration.
+    let firstTry = await supabase
       .from('notifications')
       .select('*')
+      .is('resolved_at', null)
       .order('created_at', { ascending: false })
       .limit(40)
+
+    if (firstTry.error) {
+      // Column doesn't exist yet — retry without the filter
+      firstTry = await supabase
+        .from('notifications')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(40)
+    }
+
     if (firstTry.error) { setNotifications([]); return }
     const rows = (firstTry.data as Notification[]) ?? []
-    const hasResolved = rows.some(r => 'resolved_at' in r)
-    setResolvedColExists(hasResolved || rows.length === 0 ? null : false)
+    setResolvedColExists(rows.some(r => 'resolved_at' in r) ? true : null)
     setNotifications(rows.filter(n => !n.resolved_at))
   }
 
