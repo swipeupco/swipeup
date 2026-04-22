@@ -20,7 +20,7 @@ type NotificationRow = {
   link: string | null
   read_at: string | null
   created_at: string
-  actor?: { name: string | null; avatar_url: string | null } | null
+  actor?: { name: string | null } | null
   comment?: { content: string | null } | null
 }
 
@@ -68,7 +68,10 @@ export function NotificationBell() {
     if (!user) { setItems([]); return }
     const { data } = await supabase
       .from('notifications')
-      .select('*, actor:profiles!notifications_actor_id_fkey(name, avatar_url), comment:brief_comments!notifications_comment_id_fkey(content)')
+      // NOTE: deliberately does not select avatar_url — profiles store avatars as
+      // inline base64 data URIs (~1.7MB each); selecting 30 rows would pull ~50MB.
+      // Falling back to initials in the bell UI.
+      .select('*, actor:profiles!notifications_actor_id_fkey(name), comment:brief_comments!notifications_comment_id_fkey(content)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(30)
@@ -207,11 +210,11 @@ export function NotificationBell() {
                         : 'border-l-transparent hover:bg-gray-50'
                     }`}
                   >
-                    <div className="h-9 w-9 rounded-full flex items-center justify-center text-white text-[11px] font-bold overflow-hidden flex-shrink-0" style={{ backgroundColor: '#4950F8' }}>
-                      {n.actor?.avatar_url
-                        // eslint-disable-next-line @next/next/no-img-element
-                        ? <img src={n.actor.avatar_url} alt="" className="h-full w-full object-cover" />
-                        : initials(actorName)}
+                    <div
+                      className="h-9 w-9 rounded-full flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0"
+                      style={{ backgroundColor: '#4950F8' }}
+                    >
+                      {initials(actorName)}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-baseline gap-1">
