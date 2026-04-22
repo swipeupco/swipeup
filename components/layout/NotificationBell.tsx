@@ -41,9 +41,12 @@ export function NotificationBell() {
 
   async function load() {
     const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setNotifications([]); return }
     const { data } = await supabase
       .from('notifications')
       .select('*')
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(40)
     setNotifications((data as Notification[]) ?? [])
@@ -64,11 +67,19 @@ export function NotificationBell() {
   useEffect(() => {
     load()
     const supabase = createClient()
-    const channel = supabase
-      .channel('notifications-bell')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, () => load())
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
+    let unsub: (() => void) | null = null
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return
+      const channel = supabase
+        .channel(`notifications-bell-${user.id}`)
+        .on('postgres_changes', {
+          event: 'INSERT', schema: 'public', table: 'notifications',
+          filter: `user_id=eq.${user.id}`,
+        }, () => load())
+        .subscribe()
+      unsub = () => { supabase.removeChannel(channel) }
+    })
+    return () => { if (unsub) unsub() }
   }, [])
 
   // Close on outside click

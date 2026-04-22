@@ -86,6 +86,12 @@ export function BriefDrawer({
   const [urlSaved, setUrlSaved]     = useState(false)
   const [currentUserName, setCurrentUserName] = useState<string | null>(null)
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null)
+  const [mentionUsers, setMentionUsers] = useState<{ id: string; name: string }[]>([])
+  const [mentionOpen, setMentionOpen]   = useState(false)
+  const [mentionQuery, setMentionQuery] = useState('')
+  const [mentionStart, setMentionStart] = useState(0)
+  const [mentionIndex, setMentionIndex] = useState(0)
+  const [pendingMentionIds, setPendingMentionIds] = useState<string[]>([])
   const commentsEndRef = useRef<HTMLDivElement>(null)
   const textareaRef    = useRef<HTMLTextAreaElement>(null)
 
@@ -109,6 +115,27 @@ export function BriefDrawer({
       .order('created_at', { ascending: true })
     setComments((data as Comment[]) ?? [])
   }
+
+  // Load mentionable users (client members + staff with access)
+  useEffect(() => {
+    const supabase = createClient()
+    ;(async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      const [clientRes, staffRes] = await Promise.all([
+        supabase.from('profiles').select('id, name').eq('client_id', brief.client_id),
+        supabase.from('staff_client_access').select('staff_id').eq('client_id', brief.client_id),
+      ])
+      const staffIds = (staffRes.data ?? []).map(r => r.staff_id as string)
+      const staffProfiles = staffIds.length
+        ? (await supabase.from('profiles').select('id, name').in('id', staffIds)).data ?? []
+        : []
+      const merged: Record<string, { id: string; name: string }> = {}
+      ;[...(clientRes.data ?? []), ...staffProfiles].forEach(p => {
+        if (p.name && p.id !== user?.id) merged[p.id] = { id: p.id, name: p.name }
+      })
+      setMentionUsers(Object.values(merged))
+    })()
+  }, [brief.client_id])
 
   useEffect(() => {
     loadComments()
@@ -139,8 +166,52 @@ export function BriefDrawer({
     commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [comments])
 
-  // Keyboard shortcut: Cmd/Ctrl+Enter to send
+  const filteredMentions = mentionUsers.filter(u =>
+    u.name.toLowerCase().includes(mentionQuery.toLowerCase())
+  )
+
+  function handleCommentChange(value: string) {
+    setNewComment(value)
+    const cursorPos = textareaRef.current?.selectionStart ?? value.length
+    const textBefore = value.slice(0, cursorPos)
+    const atMatch = textBefore.match(/@(\w*)$/)
+    if (atMatch) {
+      setMentionQuery(atMatch[1])
+      setMentionStart(cursorPos - atMatch[0].length)
+      setMentionOpen(true)
+      setMentionIndex(0)
+    } else {
+      setMentionOpen(false)
+    }
+  }
+
+  function insertMention(user: { id: string; name: string }) {
+    const before = newComment.slice(0, mentionStart)
+    const after  = newComment.slice(mentionStart + mentionQuery.length + 1)
+    const mention = `@${user.name} `
+    setNewComment(before + mention + after)
+    setMentionOpen(false)
+    setMentionIndex(0)
+    setPendingMentionIds(ids => Array.from(new Set([...ids, user.id])))
+    setTimeout(() => textareaRef.current?.focus(), 10)
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (mentionOpen && filteredMentions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault(); setMentionIndex(i => Math.min(i + 1, filteredMentions.length - 1)); return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault(); setMentionIndex(i => Math.max(i - 1, 0)); return
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault()
+        const pick = filteredMentions[mentionIndex] ?? filteredMentions[0]
+        if (pick) insertMention(pick)
+        return
+      }
+      if (e.key === 'Escape') { e.preventDefault(); setMentionOpen(false); return }
+    }
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault()
       sendComment()
@@ -152,17 +223,40 @@ export function BriefDrawer({
     setSending(true)
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('brief_comments').insert({
+    const text = newComment.trim()
+    const { data: inserted } = await supabase.from('brief_comments').insert({
       brief_id:    brief.id,
-      content:     newComment.trim(),
+      content:     text,
       user_id:     user?.id,
       user_email:  user?.email,
       user_name:   currentUserName ?? user?.email?.split('@')[0] ?? 'Team',
       is_internal: isInternal,
+    }).select('id').single()
+
+    // Persist mentions so notify_on_comment trigger fires the right fan-out
+    const mentionIdsInText = pendingMentionIds.filter(uid => {
+      const u = mentionUsers.find(m => m.id === uid)
+      return u ? text.includes(`@${u.name}`) : false
     })
+    if (inserted?.id && mentionIdsInText.length > 0) {
+      await supabase.from('comment_mentions').insert(
+        mentionIdsInText.map(uid => ({ comment_id: inserted.id, user_id: uid }))
+      )
+    }
+
     setNewComment('')
+    setPendingMentionIds([])
     setSending(false)
     await loadComments()
+  }
+
+  function renderCommentContent(content: string) {
+    const parts = content.split(/(@[\w-]+(?:\s[\w-]+)?)/g)
+    return parts.map((part, i) =>
+      part.startsWith('@')
+        ? <span key={i} className="font-semibold" style={{ color: '#4950F8' }}>{part}</span>
+        : <span key={i}>{part}</span>
+    )
   }
 
   async function saveDraftUrl() {
@@ -496,19 +590,44 @@ export function BriefDrawer({
                 </button>
               </div>
 
+              {/* Mention picker */}
+              {mentionOpen && filteredMentions.length > 0 && (
+                <div className="relative">
+                  <div className="absolute bottom-full left-0 right-0 mb-1 bg-white border border-zinc-200 rounded-xl shadow-lg overflow-hidden z-10 max-h-36 overflow-y-auto">
+                    {filteredMentions.map((u, idx) => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onMouseEnter={() => setMentionIndex(idx)}
+                        onMouseDown={e => { e.preventDefault(); insertMention(u) }}
+                        className={`flex items-center gap-2 w-full px-3 py-2 text-left transition-colors ${idx === mentionIndex ? 'bg-zinc-100' : 'hover:bg-zinc-50'}`}
+                      >
+                        <div
+                          className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
+                          style={{ backgroundColor: clientColor }}
+                        >
+                          {u.name.slice(0, 2).toUpperCase()}
+                        </div>
+                        <span className="text-sm font-medium text-zinc-700">{u.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Input + send */}
               <div className="flex items-end gap-2">
                 <textarea
                   ref={textareaRef}
                   rows={2}
                   value={newComment}
-                  onChange={e => setNewComment(e.target.value)}
+                  onChange={e => handleCommentChange(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder={isInternal ? 'Internal note…' : 'Write a comment…'}
+                  placeholder={isInternal ? 'Internal note…' : 'Write a comment… (@ to mention)'}
                   className={`flex-1 rounded-xl border px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 ${
                     isInternal
                       ? 'border-amber-200 bg-amber-50 focus:border-amber-400 focus:ring-amber-100 placeholder-amber-300'
-                      : 'border-zinc-200 bg-zinc-50 focus:border-[#14C29F] focus:ring-[#14C29F]/20'
+                      : 'border-zinc-200 bg-zinc-50 focus:border-[#4950F8] focus:ring-[#4950F8]/20'
                   }`}
                 />
                 <button
@@ -542,6 +661,8 @@ function CommentBubble({ comment, variant }: { comment: Comment; variant: 'clien
   const bg   = variant === 'client' ? 'bg-blue-50 border-blue-100' : 'bg-amber-50 border-amber-100'
   const name = comment.user_name ?? comment.user_email?.split('@')[0] ?? 'Unknown'
 
+  const parts = (comment.content ?? '').split(/(@[\w-]+(?:\s[\w-]+)?)/g)
+
   return (
     <div className={`rounded-xl p-3 border ${bg}`}>
       <div className="flex items-center gap-2 mb-1.5">
@@ -556,7 +677,13 @@ function CommentBubble({ comment, variant }: { comment: Comment; variant: 'clien
           {format(new Date(comment.created_at), 'd MMM · h:mm a')}
         </span>
       </div>
-      <p className="text-xs leading-relaxed text-gray-700 pl-8">{comment.content}</p>
+      <p className="text-xs leading-relaxed text-gray-700 pl-8">
+        {parts.map((part, i) =>
+          part.startsWith('@')
+            ? <span key={i} className="font-semibold" style={{ color: '#4950F8' }}>{part}</span>
+            : <span key={i}>{part}</span>
+        )}
+      </p>
     </div>
   )
 }
