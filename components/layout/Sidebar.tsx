@@ -89,7 +89,12 @@ export function Sidebar() {
       <div className="px-3 pb-2 space-y-0.5">
         <div className="flex items-center gap-2 px-3 py-2">
           <NotificationBell />
-          <span className="text-sm font-medium text-gray-500">Notifications</span>
+          <Link
+            href="/account/notifications"
+            className="text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors"
+          >
+            Notifications
+          </Link>
         </div>
         <button
           onClick={handleLogout}
