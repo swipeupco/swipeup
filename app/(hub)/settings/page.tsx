@@ -1,18 +1,16 @@
 'use client'
 
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { NotificationSettingsSection } from '@/components/settings/NotificationSettingsSection'
 
-// Stub placeholder — Part 3 of the notification redesign replaces this with
-// a proper settings page that includes Profile / Notifications sections.
-// For now, land on the existing notification preferences page.
-export default function SettingsStubPage() {
-  const router = useRouter()
-  useEffect(() => {
-    const target = typeof window !== 'undefined' && window.location.hash === '#notifications'
-      ? '/account/notifications'
-      : '/account/notifications'
-    router.replace(target)
-  }, [router])
-  return <div className="p-8 text-sm text-gray-500">Opening settings…</div>
+export default function SettingsPage() {
+  return (
+    <div className="max-w-3xl mx-auto p-8 space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-zinc-900">Settings</h1>
+        <p className="text-zinc-500 mt-1">Manage your notifications and preferences</p>
+      </div>
+
+      <NotificationSettingsSection />
+    </div>
+  )
 }
