@@ -241,9 +241,12 @@ export function BriefDrawer({
       return u ? text.includes(`@${u.name}`) : false
     })
     if (inserted?.id && mentionIdsInText.length > 0) {
-      await supabase.from('comment_mentions').insert(
+      const { error: mentionError } = await supabase.from('comment_mentions').insert(
         mentionIdsInText.map(uid => ({ comment_id: inserted.id, user_id: uid }))
       )
+      if (mentionError) {
+        console.error('comment_mentions insert failed:', mentionError)
+      }
     }
 
     setNewComment('')
