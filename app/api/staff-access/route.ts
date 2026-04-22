@@ -1,19 +1,11 @@
 export const dynamic = 'force-dynamic'
 
-import { createClient } from '@supabase/supabase-js'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
-
-function adminClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
-}
 
 // GET /api/staff-access — list all staff members + their accessible client IDs
 export async function GET() {
-  const supabase = adminClient()
+  const supabase = createAdminClient()
   const { data: staff } = await supabase
     .from('profiles')
     .select('id, name, email:id')
@@ -44,7 +36,7 @@ export async function GET() {
 
 // POST /api/staff-access — grant access
 export async function POST(request: Request) {
-  const supabase = adminClient()
+  const supabase = createAdminClient()
   const { staffId, clientId } = await request.json()
   if (!staffId || !clientId) return NextResponse.json({ error: 'staffId and clientId required' }, { status: 400 })
 
@@ -58,7 +50,7 @@ export async function POST(request: Request) {
 
 // DELETE /api/staff-access — revoke access
 export async function DELETE(request: Request) {
-  const supabase = adminClient()
+  const supabase = createAdminClient()
   const { staffId, clientId } = await request.json()
   if (!staffId || !clientId) return NextResponse.json({ error: 'staffId and clientId required' }, { status: 400 })
 
