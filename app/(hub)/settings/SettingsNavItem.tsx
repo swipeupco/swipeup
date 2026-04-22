@@ -2,14 +2,20 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import type { ComponentType, SVGProps } from 'react'
+import type { ReactNode } from 'react'
 
+/** Tab rail link for /settings/*. Active-state detection lives here because
+ *  the parent layout is a server component and can't touch usePathname.
+ *
+ *  The `icon` prop is a pre-rendered ReactNode, not a component type —
+ *  React Server Components can't serialize function values across the
+ *  server/client boundary, so the server layout instantiates the JSX for us. */
 export function SettingsNavItem({
-  href, label, Icon,
+  href, label, icon,
 }: {
   href: string
   label: string
-  Icon: ComponentType<SVGProps<SVGSVGElement>>
+  icon: ReactNode
 }) {
   const pathname = usePathname()
   const active = pathname === href || pathname.startsWith(href + '/')
@@ -22,7 +28,7 @@ export function SettingsNavItem({
           : 'text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]'
       }`}
     >
-      <Icon className="h-4 w-4" />
+      {icon}
       {label}
     </Link>
   )

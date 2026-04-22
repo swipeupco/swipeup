@@ -1,4 +1,3 @@
-import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { User, Bell, Palette, Users } from 'lucide-react'
@@ -7,7 +6,12 @@ import { SettingsNavItem } from './SettingsNavItem'
 /** Settings layout — renders the tab rail on the left and the tab body on the
  *  right. Team tab is gated to admins only (server-side, so URL-typing a
  *  designer in is blocked at the layer below). Everything else is visible to
- *  any authenticated staff member. */
+ *  any authenticated staff member.
+ *
+ *  Note: this is a server component. Lucide icons are instantiated here as JSX
+ *  and passed to the client SettingsNavItem — we can't pass the component
+ *  functions themselves across the RSC boundary.
+ */
 export default async function SettingsLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -23,11 +27,12 @@ export default async function SettingsLayout({ children }: { children: React.Rea
     ?? ((profile as { is_admin?: boolean })?.is_admin ? 'admin' : 'designer')
   const isAdmin = role === 'admin'
 
-  const tabs: Array<{ href: string; label: string; icon: typeof User; admin?: boolean }> = [
-    { href: '/settings/profile',       label: 'Profile',       icon: User },
-    { href: '/settings/notifications', label: 'Notifications', icon: Bell },
-    { href: '/settings/appearance',    label: 'Appearance',    icon: Palette },
-    { href: '/settings/team',          label: 'Team',          icon: Users, admin: true },
+  const iconClass = 'h-4 w-4'
+  const tabs = [
+    { href: '/settings/profile',       label: 'Profile',       icon: <User     className={iconClass} />, admin: false },
+    { href: '/settings/notifications', label: 'Notifications', icon: <Bell     className={iconClass} />, admin: false },
+    { href: '/settings/appearance',    label: 'Appearance',    icon: <Palette  className={iconClass} />, admin: false },
+    { href: '/settings/team',          label: 'Team',          icon: <Users    className={iconClass} />, admin: true  },
   ]
 
   return (
@@ -41,7 +46,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
         <nav className="flex flex-col gap-0.5">
           {tabs.map(tab => {
             if (tab.admin && !isAdmin) return null
-            return <SettingsNavItem key={tab.href} href={tab.href} label={tab.label} Icon={tab.icon} />
+            return <SettingsNavItem key={tab.href} href={tab.href} label={tab.label} icon={tab.icon} />
           })}
         </nav>
         <div>{children}</div>
