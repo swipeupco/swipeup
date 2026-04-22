@@ -23,7 +23,7 @@ export async function POST(request: Request) {
         role: 'client',
         name: name ?? null,
       },
-      redirectTo: `${process.env.NEXT_PUBLIC_CLIENT_URL ?? 'https://offtrackrvhub.vercel.app'}/dashboard`,
+      redirectTo: `${process.env.NEXT_PUBLIC_CLIENT_URL ?? 'https://portal.swipeupco.com'}/dashboard`,
     })
 
     if (error) {
