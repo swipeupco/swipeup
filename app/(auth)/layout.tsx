@@ -7,6 +7,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundRepeat: 'no-repeat',
+        backgroundColor: '#09090b',
       }}
     >
       {children}
