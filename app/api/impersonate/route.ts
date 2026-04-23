@@ -21,7 +21,7 @@ export async function POST(request: Request) {
       type: 'magiclink',
       email: userData.user.email,
       options: {
-        redirectTo: `${process.env.NEXT_PUBLIC_CLIENT_URL ?? 'https://offtrackrvhub.vercel.app'}/dashboard`
+        redirectTo: `${process.env.NEXT_PUBLIC_CLIENT_URL ?? 'https://portal.swipeupco.com'}/dashboard`
       }
     })
 

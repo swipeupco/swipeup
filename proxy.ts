@@ -28,8 +28,7 @@ export async function proxy(req: NextRequest) {
     pathname.startsWith('/api/frameio-webhook') ||
     pathname === '/favicon.ico' ||
     pathname === '/bg.png' ||
-    pathname === '/SwipeUp_White.svg' ||
-    pathname === '/swipeup-logo.png'
+    pathname === '/SwipeUp_White.svg'
   ) {
     return NextResponse.next()
   }

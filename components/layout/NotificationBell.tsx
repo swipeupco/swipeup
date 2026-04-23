@@ -1,206 +1,262 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Bell, MessageSquare, AlertTriangle, CheckCircle2, X, Check } from 'lucide-react'
-import { format, isToday, isYesterday } from 'date-fns'
+import { Bell, Settings, CheckCheck } from 'lucide-react'
+import { formatDistanceToNowStrict } from 'date-fns'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
-interface Notification {
+type NotificationRow = {
   id: string
-  type: 'client_feedback' | 'revisions_required' | 'brief_approved' | string
-  brief_id: string
+  user_id: string
+  actor_id: string | null
+  comment_id: string | null
+  event_type: string | null
+  brief_id: string | null
   brief_name: string | null
-  client_name: string | null
   client_slug: string | null
   message: string
+  link: string | null
   read_at: string | null
-  resolved_at?: string | null
   created_at: string
+  actor?: { name: string | null } | null
+  comment?: { content: string | null } | null
 }
 
-const TYPE_CONFIG: Record<string, { icon: typeof MessageSquare; color: string; bg: string }> = {
-  client_feedback:    { icon: MessageSquare,  color: 'text-blue-400',   bg: 'bg-blue-500/10' },
-  revisions_required: { icon: AlertTriangle,  color: 'text-red-400',    bg: 'bg-red-500/10' },
-  brief_approved:     { icon: CheckCircle2,   color: 'text-green-400',  bg: 'bg-green-500/10' },
+function initials(name: string | null | undefined) {
+  if (!name) return '?'
+  const parts = name.trim().split(/\s+/)
+  return parts.length >= 2
+    ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    : parts[0].slice(0, 2).toUpperCase()
 }
 
-function formatTime(iso: string) {
-  const d = new Date(iso)
-  if (isToday(d)) return format(d, 'h:mm a')
-  if (isYesterday(d)) return 'Yesterday'
-  return format(d, 'd MMM')
+function describeAction(ev: string | null): string {
+  switch (ev) {
+    case 'mentioned':        return 'mentioned you'
+    case 'new_comment':      return 'commented'
+    case 'ready_for_review': return 'is ready for review'
+    case 'status_change':    return 'updated the status'
+    default:                 return 'notified you'
+  }
+}
+
+function relative(iso: string): string {
+  try {
+    return formatDistanceToNowStrict(new Date(iso), { addSuffix: true })
+      .replace('seconds', 's').replace('second', 's')
+      .replace('minutes', 'm').replace('minute', 'm')
+      .replace('hours', 'h').replace('hour', 'h')
+      .replace('days', 'd').replace('day', 'd')
+  } catch { return '' }
 }
 
 export function NotificationBell() {
-  const [notifications, setNotifications] = useState<Notification[]>([])
-  const [open, setOpen] = useState(false)
-  const panelRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
+  const [items, setItems] = useState<NotificationRow[]>([])
+  const [open, setOpen] = useState(false)
+  const [justArrived, setJustArrived] = useState(false)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
 
-  // Only count un-resolved + un-read as "new"
-  const unread = notifications.filter(n => !n.read_at && !n.resolved_at).length
+  const unread = items.filter(n => !n.read_at).length
 
-  async function load() {
+  async function fetchNotifications() {
     const supabase = createClient()
-    // Prefer filtering at the DB level once resolved_at is deployed;
-    // fall back to client-side filter pre-migration.
-    let firstTry = await supabase
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setItems([]); return }
+    const { data } = await supabase
       .from('notifications')
-      .select('*')
-      .is('resolved_at', null)
+      // NOTE: deliberately does not select avatar_url — profiles store avatars as
+      // inline base64 data URIs (~1.7MB each); selecting 30 rows would pull ~50MB.
+      // Falling back to initials in the bell UI.
+      .select('*, actor:profiles!notifications_actor_id_fkey(name), comment:brief_comments!notifications_comment_id_fkey(content)')
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false })
-      .limit(40)
+      .limit(30)
+    setItems((data as NotificationRow[]) ?? [])
+  }
 
-    if (firstTry.error) {
-      // Column doesn't exist yet — retry without the filter
-      firstTry = await supabase
-        .from('notifications')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(40)
+  useEffect(() => { fetchNotifications() }, [])
+
+  // Realtime subscription scoped to this user
+  useEffect(() => {
+    const supabase = createClient()
+    let unsub: (() => void) | null = null
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return
+      const channel = supabase
+        .channel(`notifications-${user.id}`)
+        .on('postgres_changes', {
+          event: 'INSERT', schema: 'public', table: 'notifications',
+          filter: `user_id=eq.${user.id}`,
+        }, () => {
+          setJustArrived(true)
+          fetchNotifications()
+          setTimeout(() => setJustArrived(false), 1200)
+        })
+        .on('postgres_changes', {
+          event: 'UPDATE', schema: 'public', table: 'notifications',
+          filter: `user_id=eq.${user.id}`,
+        }, fetchNotifications)
+        .subscribe()
+      unsub = () => { supabase.removeChannel(channel) }
+    })
+    return () => { if (unsub) unsub() }
+  }, [])
+
+  // Close on outside click / Escape
+  useEffect(() => {
+    if (!open) return
+    function onClick(e: MouseEvent) {
+      if (
+        panelRef.current && !panelRef.current.contains(e.target as Node) &&
+        buttonRef.current && !buttonRef.current.contains(e.target as Node)
+      ) setOpen(false)
     }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onClick)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onClick)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
 
-    if (firstTry.error) { setNotifications([]); return }
-    const rows = (firstTry.data as Notification[]) ?? []
-    setNotifications(rows.filter(n => !n.resolved_at))
+  async function markRead(id: string) {
+    const supabase = createClient()
+    const now = new Date().toISOString()
+    setItems(prev => prev.map(n => n.id === id ? { ...n, read_at: now } : n))
+    await supabase.from('notifications').update({ read_at: now, resolved: true }).eq('id', id)
   }
 
   async function markAllRead() {
-    const unreadIds = notifications.filter(n => !n.read_at).map(n => n.id)
+    const supabase = createClient()
+    const unreadIds = items.filter(n => !n.read_at).map(n => n.id)
     if (!unreadIds.length) return
-    const supabase = createClient()
-    await supabase
-      .from('notifications')
-      .update({ read_at: new Date().toISOString() })
-      .in('id', unreadIds)
-    setNotifications(prev => prev.map(n => ({ ...n, read_at: n.read_at ?? new Date().toISOString() })))
+    const now = new Date().toISOString()
+    setItems(prev => prev.map(n => ({ ...n, read_at: n.read_at ?? now })))
+    await supabase.from('notifications').update({ read_at: now, resolved: true }).in('id', unreadIds)
   }
 
-  async function resolveOne(id: string) {
-    const supabase = createClient()
-    const payload: Record<string, string> = { read_at: new Date().toISOString(), resolved_at: new Date().toISOString() }
-    const { error } = await supabase.from('notifications').update(payload).eq('id', id)
-    if (error) {
-      // Likely the resolved_at column isn't deployed yet — fall back to read_at only
-      await supabase.from('notifications').update({ read_at: new Date().toISOString() }).eq('id', id)
-    }
-    setNotifications(prev => prev.filter(n => n.id !== id))
-  }
-
-  useEffect(() => {
-    load()
-    const supabase = createClient()
-    const channel = supabase
-      .channel('notifications-bell')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => load())
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [])
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [])
-
-  function handleOpen() {
-    setOpen(v => !v)
-    if (!open) markAllRead()
-  }
-
-  function handleNotificationClick(n: Notification) {
+  function openNotification(n: NotificationRow) {
+    markRead(n.id)
     setOpen(false)
-    if (n.client_slug) router.push(`/pipeline/${n.client_slug}`)
+    if (n.link) {
+      if (n.link.startsWith('/')) router.push(n.link)
+      else window.open(n.link, '_blank')
+    }
   }
 
   return (
-    <div className="relative" ref={panelRef}>
+    <div className="relative">
       <button
-        onClick={handleOpen}
+        ref={buttonRef}
+        onClick={() => setOpen(v => !v)}
         aria-label="Notifications"
-        className="relative flex items-center justify-center h-9 w-9 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)] hover:bg-[var(--surface-3)] hover:text-[var(--text)] transition-colors"
+        className="relative flex items-center justify-center h-9 w-9 rounded-xl text-gray-500 hover:bg-gray-100 hover:text-gray-800 transition-colors"
       >
         <Bell className="h-[18px] w-[18px]" />
         {unread > 0 && (
-          <span className="absolute -top-1 -right-1 h-4 min-w-4 rounded-full bg-red-500 text-white text-[9px] font-bold px-1 flex items-center justify-center">
+          <span
+            className={`absolute top-1.5 right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white ring-2 ring-white ${justArrived ? 'animate-bell-pulse' : ''}`}
+          >
             {unread > 9 ? '9+' : unread}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-80 rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl overflow-hidden z-50">
+        <div
+          ref={panelRef}
+          className="absolute right-0 top-full mt-2 w-[380px] rounded-2xl bg-white border border-gray-200 shadow-xl overflow-hidden z-50 origin-top-right animate-bell-in"
+        >
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-muted)]">
-            <div className="flex items-center gap-2">
-              <Bell className="h-4 w-4 text-[var(--text-muted)]" />
-              <h3 className="text-sm font-semibold text-[var(--text)]">Notifications</h3>
-              {unread > 0 && (
-                <span className="rounded-full bg-red-500/15 text-red-400 text-[10px] font-bold px-1.5 py-0.5">
-                  {unread} new
-                </span>
-              )}
-            </div>
-            <button onClick={() => setOpen(false)} className="text-[var(--text-dim)] hover:text-[var(--text)]">
-              <X className="h-4 w-4" />
-            </button>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <p className="text-sm font-semibold text-gray-900">Notifications</p>
+            {unread > 0 && (
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{unread} unread</span>
+            )}
           </div>
 
           {/* List */}
-          <div className="max-h-96 overflow-y-auto divide-y divide-[var(--border-muted)]">
-            {notifications.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-10">
-                <Bell className="h-6 w-6 text-[var(--text-dim)] mb-2" />
-                <p className="text-xs text-[var(--text-muted)]">You&apos;re all caught up</p>
+          <div className="max-h-[440px] overflow-y-auto">
+            {items.length === 0 ? (
+              <div className="px-6 py-12 text-center">
+                <div className="mx-auto h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center mb-3">
+                  <Bell className="h-5 w-5 text-gray-400" />
+                </div>
+                <p className="text-sm font-medium text-gray-700">No notifications yet</p>
+                <p className="text-xs text-gray-400 mt-1">We&apos;ll ping you when someone tags or mentions you.</p>
               </div>
-            )}
-            {notifications.map(n => {
-              const cfg = TYPE_CONFIG[n.type] ?? TYPE_CONFIG.client_feedback
-              const Icon = cfg.icon
-              const isUnread = !n.read_at
-              return (
-                <div
-                  key={n.id}
-                  className={`group flex items-start gap-3 px-4 py-3 transition-colors hover:bg-[var(--surface-2)] ${isUnread ? 'bg-[var(--brand-soft)]/40' : ''}`}
-                >
-                  <button onClick={() => handleNotificationClick(n)} className="flex flex-1 items-start gap-3 text-left min-w-0">
-                    <div className={`h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${cfg.bg}`}>
-                      <Icon className={`h-3.5 w-3.5 ${cfg.color}`} />
+            ) : (
+              items.map(n => {
+                const isUnread = !n.read_at
+                const actorName = n.actor?.name ?? 'Someone'
+                const action = describeAction(n.event_type)
+                const snippet = n.comment?.content
+                  ? (n.comment.content.length > 100 ? n.comment.content.slice(0, 100) + '…' : n.comment.content)
+                  : null
+                return (
+                  <button
+                    key={n.id}
+                    onClick={() => openNotification(n)}
+                    className={`w-full flex gap-3 px-4 py-3 text-left transition-colors border-l-[3px] ${
+                      isUnread
+                        ? 'bg-[#4950F8]/[0.04] border-l-[#4950F8] hover:bg-[#4950F8]/[0.08]'
+                        : 'border-l-transparent hover:bg-gray-50'
+                    }`}
+                  >
+                    <div
+                      className="h-9 w-9 rounded-full flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0"
+                      style={{ backgroundColor: '#4950F8' }}
+                    >
+                      {initials(actorName)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className={`text-xs leading-snug ${isUnread ? 'font-semibold text-[var(--text)]' : 'text-[var(--text-muted)]'}`}>
-                        {n.message}
-                      </p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        {n.client_name && <span className="text-[10px] text-[var(--text-dim)]">{n.client_name}</span>}
-                        <span className="text-[10px] text-[var(--text-dim)]">{formatTime(n.created_at)}</span>
+                      <div className="flex items-baseline gap-1">
+                        <p className="text-sm font-semibold text-gray-900 truncate">{n.brief_name ?? 'Brief'}</p>
                       </div>
+                      <p className="text-xs text-gray-600 mt-0.5">
+                        <span className="font-medium text-gray-800">{actorName}</span>{' '}{action}
+                      </p>
+                      {snippet && (
+                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">“{snippet}”</p>
+                      )}
+                      <p className="text-[10px] text-gray-400 mt-1">{relative(n.created_at)}</p>
                     </div>
+                    {isUnread && (
+                      <span className="h-2 w-2 rounded-full bg-[#4950F8] flex-shrink-0 mt-1.5" />
+                    )}
                   </button>
-                  <button
-                    onClick={() => resolveOne(n.id)}
-                    title="Mark resolved"
-                    className="opacity-0 group-hover:opacity-100 flex items-center justify-center h-6 w-6 rounded-md text-[var(--text-dim)] hover:bg-green-500/10 hover:text-green-400 transition"
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              )
-            })}
+                )
+              })
+            )}
           </div>
 
           {/* Footer */}
-          <div className="border-t border-[var(--border-muted)] px-3 py-2">
+          <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-100 bg-gray-50/60">
+            {unread > 0 ? (
+              <button
+                onClick={markAllRead}
+                className="flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors"
+              >
+                <CheckCheck className="h-3.5 w-3.5" />
+                Mark all as read
+              </button>
+            ) : (
+              <span />
+            )}
             <Link
-              href="/notifications"
+              href="/settings#notifications"
               onClick={() => setOpen(false)}
-              className="block w-full rounded-lg px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-2)] text-center transition-colors"
+              className="flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors"
             >
-              View all notifications
+              <Settings className="h-3.5 w-3.5" />
+              Notification settings
             </Link>
           </div>
         </div>

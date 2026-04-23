@@ -1,6 +1,15 @@
 -- Task 1 — Profile columns for Hub theming + notification preferences.
 -- Run against the shared Supabase project. Additive only.
 --
+-- ── POST-MERGE NOTE ─────────────────────────────────────────────────────────
+-- The `notification_preferences` JSONB column in this file is OBSOLETE.
+-- main shipped a proper `notification_preferences` TABLE (per-event rows,
+-- email_enabled/in_app_enabled per event type) and the Hub's
+-- /settings/notifications now uses that table via the shared
+-- components/settings/NotificationSettingsSection component.
+-- The JSONB column below is safe to skip when applying this migration.
+-- Only the `theme_preference` column is still relevant.
+--
 -- Safety:
 --   * All columns have defaults so existing rows backfill instantly.
 --   * Portal does not read these columns today — no downstream impact.
