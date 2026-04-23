@@ -280,13 +280,15 @@ export default function InternalPipeline() {
   }
 
   return (
-    // Isolate the Portal's light visual context from the Hub's dark shell
-    <div className="bg-[#F7F8FA] text-gray-900 min-h-[calc(100vh-3.5rem)]">
+    // pipeline-bg: radial gradient from bottom-left (brand violet) on a deep
+    // near-black base in dark mode, subtle same-recipe variant in light mode.
+    // See app/globals.css.
+    <div className="pipeline-bg min-h-[calc(100vh-3.5rem)] text-gray-900 dark:text-white">
       <div className="p-6 space-y-5">
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
-            <h1 className="text-xl font-bold text-gray-900">Production Pipeline</h1>
+            <h1 className="text-xl font-bold text-gray-900 dark:text-white">Production Pipeline</h1>
             <p className="text-sm text-gray-400 mt-0.5">
               {briefs.length} brief{briefs.length !== 1 ? 's' : ''} across {Object.keys(new Set(briefs.map(b => b.client_id))).length || 0} client{briefs.length !== 1 ? 's' : ''} · {filtered.length} shown
             </p>
@@ -301,7 +303,7 @@ export default function InternalPipeline() {
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder="Search briefs, clients, designers..."
-              className="w-full pl-9 pr-3 py-2 rounded-xl border border-gray-200 bg-white text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-200 focus:border-violet-300"
+              className="w-full pl-9 pr-3 py-2 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm text-gray-700 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-200 dark:focus:ring-violet-400/30 focus:border-violet-300 dark:focus:border-violet-400"
             />
           </div>
           <FilterChip active={myOnly} onClick={() => setMyOnly(v => !v)} icon={<User className="h-3.5 w-3.5" />} label="My briefs" count={myCount} />
@@ -314,7 +316,7 @@ export default function InternalPipeline() {
             inside each column when its card list overflows. */}
         {loading ? (
           <div className="flex gap-3 overflow-x-auto pb-2">
-            {[1,2,3,4].map(n => <div key={n} className="flex-shrink-0 w-[272px] h-96 rounded-2xl bg-gray-200 animate-pulse" />)}
+            {[1,2,3,4].map(n => <div key={n} className="flex-shrink-0 w-[272px] h-96 rounded-2xl bg-gray-200 dark:bg-white/5 animate-pulse" />)}
           </div>
         ) : (
           <DragDropContext onDragEnd={onDragEnd}>
@@ -324,13 +326,13 @@ export default function InternalPipeline() {
                 return (
                   <div
                     key={col.key}
-                    className="flex-shrink-0 w-[272px] flex flex-col max-h-[calc(100vh-14rem)] bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
+                    className="flex-shrink-0 w-[272px] flex flex-col max-h-[calc(100vh-14rem)] bg-white dark:bg-[#0F1420] rounded-2xl border border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none overflow-hidden"
                   >
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50 flex-shrink-0">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50 dark:border-white/[0.06] flex-shrink-0">
                       <div className="flex items-center gap-2">
                         <span className={`h-2 w-2 rounded-full flex-shrink-0 ${col.dot}`} />
-                        <h3 className="text-sm font-semibold text-gray-800">{col.label}</h3>
-                        <span className="text-[11px] font-medium text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">
+                        <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100">{col.label}</h3>
+                        <span className="text-[11px] font-medium text-gray-400 dark:text-zinc-400 bg-gray-100 dark:bg-white/10 rounded-full px-2 py-0.5">
                           {colBriefs.length}
                         </span>
                       </div>
@@ -341,7 +343,7 @@ export default function InternalPipeline() {
                         <div
                           ref={provided.innerRef}
                           {...provided.droppableProps}
-                          className={`flex-1 overflow-y-auto p-3 space-y-3 min-h-[200px] transition-colors ${snapshot.isDraggingOver ? 'bg-violet-50/50' : ''}`}
+                          className={`flex-1 overflow-y-auto p-3 space-y-3 min-h-[200px] transition-colors ${snapshot.isDraggingOver ? 'bg-violet-50/50 dark:bg-violet-500/10' : ''}`}
                         >
                           {colBriefs.map((brief, index) => (
                             <Draggable key={brief.id} draggableId={brief.id} index={index}>
@@ -370,8 +372,8 @@ export default function InternalPipeline() {
                           ))}
                           {provided.placeholder}
                           {colBriefs.length === 0 && (
-                            <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50/50 py-12 text-center">
-                              <p className="text-xs text-gray-400">{col.empty}</p>
+                            <div className="rounded-2xl border border-dashed border-gray-200 dark:border-white/[0.08] bg-gray-50/50 dark:bg-white/[0.02] py-12 text-center">
+                              <p className="text-xs text-gray-400 dark:text-zinc-500">{col.empty}</p>
                             </div>
                           )}
                         </div>
@@ -419,14 +421,14 @@ function FilterChip({
       onClick={onClick}
       className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold border transition-colors ${
         active
-          ? 'bg-violet-50 border-violet-200 text-violet-700'
-          : 'border-gray-200 bg-white text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+          ? 'bg-violet-50 dark:bg-violet-500/15 border-violet-200 dark:border-violet-400/30 text-violet-700 dark:text-violet-300'
+          : 'border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-gray-600 dark:text-zinc-300 hover:text-gray-800 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-white/10'
       }`}
     >
       {icon}
       {label}
       <span className={`rounded-full text-[10px] font-bold px-1.5 py-0.5 ${
-        active ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600'
+        active ? 'bg-violet-600 text-white' : 'bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-zinc-300'
       }`}>
         {count}
       </span>
