@@ -316,7 +316,7 @@ export default function InternalPipeline() {
             inside each column when its card list overflows. */}
         {loading ? (
           <div className="flex gap-3 overflow-x-auto pb-2">
-            {[1,2,3,4].map(n => <div key={n} className="flex-shrink-0 w-[272px] h-96 rounded-2xl bg-gray-200 animate-pulse" />)}
+            {[1,2,3,4].map(n => <div key={n} className="flex-shrink-0 w-[272px] h-96 rounded-2xl bg-gray-200 dark:bg-white/5 animate-pulse" />)}
           </div>
         ) : (
           <DragDropContext onDragEnd={onDragEnd}>
@@ -326,13 +326,13 @@ export default function InternalPipeline() {
                 return (
                   <div
                     key={col.key}
-                    className="flex-shrink-0 w-[272px] flex flex-col max-h-[calc(100vh-14rem)] bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
+                    className="flex-shrink-0 w-[272px] flex flex-col max-h-[calc(100vh-14rem)] bg-white dark:bg-[#0F1420] rounded-2xl border border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none overflow-hidden"
                   >
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50 flex-shrink-0">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50 dark:border-white/[0.06] flex-shrink-0">
                       <div className="flex items-center gap-2">
                         <span className={`h-2 w-2 rounded-full flex-shrink-0 ${col.dot}`} />
-                        <h3 className="text-sm font-semibold text-gray-800">{col.label}</h3>
-                        <span className="text-[11px] font-medium text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">
+                        <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100">{col.label}</h3>
+                        <span className="text-[11px] font-medium text-gray-400 dark:text-zinc-400 bg-gray-100 dark:bg-white/10 rounded-full px-2 py-0.5">
                           {colBriefs.length}
                         </span>
                       </div>
@@ -343,7 +343,7 @@ export default function InternalPipeline() {
                         <div
                           ref={provided.innerRef}
                           {...provided.droppableProps}
-                          className={`flex-1 overflow-y-auto p-3 space-y-3 min-h-[200px] transition-colors ${snapshot.isDraggingOver ? 'bg-violet-50/50' : ''}`}
+                          className={`flex-1 overflow-y-auto p-3 space-y-3 min-h-[200px] transition-colors ${snapshot.isDraggingOver ? 'bg-violet-50/50 dark:bg-violet-500/10' : ''}`}
                         >
                           {colBriefs.map((brief, index) => (
                             <Draggable key={brief.id} draggableId={brief.id} index={index}>
@@ -372,8 +372,8 @@ export default function InternalPipeline() {
                           ))}
                           {provided.placeholder}
                           {colBriefs.length === 0 && (
-                            <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50/50 py-12 text-center">
-                              <p className="text-xs text-gray-400">{col.empty}</p>
+                            <div className="rounded-2xl border border-dashed border-gray-200 dark:border-white/[0.08] bg-gray-50/50 dark:bg-white/[0.02] py-12 text-center">
+                              <p className="text-xs text-gray-400 dark:text-zinc-500">{col.empty}</p>
                             </div>
                           )}
                         </div>

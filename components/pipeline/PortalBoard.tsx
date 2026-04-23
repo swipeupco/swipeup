@@ -248,9 +248,9 @@ export function BriefCard({
     // drag initiation via {...STOP_DRAG}.
     <div
       {...(dragHandleProps ?? {})}
-      className={`rounded-2xl bg-white p-4 transition-all ${isDragging
+      className={`rounded-2xl bg-white dark:bg-[#161B26] p-4 transition-all ${isDragging
         ? 'rotate-1 scale-105 cursor-grabbing'
-        : 'border border-gray-100 shadow-sm hover:shadow-md cursor-grab active:cursor-grabbing'
+        : 'border border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none hover:shadow-md dark:hover:border-white/[0.14] cursor-grab active:cursor-grabbing'
       }`}
       style={isDragging ? {
         boxShadow: `0 0 0 2px ${clientColor}, 0 20px 40px ${clientColor}55, 0 8px 24px rgba(0,0,0,0.15)`,
@@ -259,7 +259,7 @@ export function BriefCard({
     >
       {/* Hub-only: client logo + name at top (master pipeline only) */}
       {showClientChip && (brief.client_name || brief.client_color) && (
-        <div className="flex items-center gap-1.5 mb-2 pb-2 border-b border-gray-50">
+        <div className="flex items-center gap-1.5 mb-2 pb-2 border-b border-gray-50 dark:border-white/[0.06]">
           <div
             className="h-4 w-4 rounded flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0 overflow-hidden"
             style={{ backgroundColor: brief.client_color ?? clientColor }}
@@ -270,7 +270,7 @@ export function BriefCard({
               : (brief.client_name ?? '?').slice(0, 2).toUpperCase()
             }
           </div>
-          <span className="text-[10px] font-semibold text-gray-500 truncate">{brief.client_name ?? 'Client'}</span>
+          <span className="text-[10px] font-semibold text-gray-500 dark:text-zinc-400 truncate">{brief.client_name ?? 'Client'}</span>
         </div>
       )}
 
@@ -288,7 +288,7 @@ export function BriefCard({
           )}
         </div>
         {dragHandleProps && (
-          <div className="p-1 rounded-lg text-gray-200" aria-hidden>
+          <div className="p-1 rounded-lg text-gray-200 dark:text-white/20" aria-hidden>
             <GripVertical className="h-4 w-4" />
           </div>
         )}
@@ -304,14 +304,20 @@ export function BriefCard({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={brief.cover_url} alt="" className="h-full w-full object-cover" />
         ) : (
+          // Cover placeholder — light pastel on light, flat ~15% brand-tint on dark.
+          // CSS custom props + Tailwind arbitrary-property classes keep this SSR-safe
+          // (no flash) across the .dark class toggle.
           <div
-            className="h-full w-full flex items-center justify-center"
-            style={{ background: `linear-gradient(135deg, ${typeInfo?.color ?? '#6366f1'}22 0%, ${typeInfo?.color ?? '#6366f1'}44 100%)` }}
+            className="h-full w-full flex items-center justify-center [background:var(--ph-light)] dark:[background:var(--ph-dark)]"
+            style={{
+              ['--ph-light' as string]: `linear-gradient(135deg, ${typeInfo?.color ?? '#6366f1'}22 0%, ${typeInfo?.color ?? '#6366f1'}44 100%)`,
+              ['--ph-dark'  as string]: `${typeInfo?.color ?? '#6366f1'}26`,
+            } as React.CSSProperties}
           >
             {typeInfo ? (
               <typeInfo.icon className="h-10 w-10 opacity-30" style={{ color: typeInfo.color }} />
             ) : (
-              <div className="h-10 w-10 rounded-full bg-gray-200 opacity-50" />
+              <div className="h-10 w-10 rounded-full bg-gray-200 dark:bg-white/10 opacity-50" />
             )}
           </div>
         )}
@@ -387,28 +393,33 @@ export function BriefCard({
         )}
       </div>
 
-      {/* Content type badge */}
+      {/* Content type badge — brand colour, lower background opacity on dark so
+          it doesn't glare against the dark canvas. */}
       {typeInfo && (
         <span
-          className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold mb-2"
-          style={{ backgroundColor: `${typeInfo.color}18`, color: typeInfo.color }}
+          className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold mb-2 [background-color:var(--chip-bg-light)] dark:[background-color:var(--chip-bg-dark)]"
+          style={{
+            ['--chip-bg-light' as string]: `${typeInfo.color}18`,
+            ['--chip-bg-dark'  as string]: `${typeInfo.color}10`,
+            color: typeInfo.color,
+          } as React.CSSProperties}
         >
           {typeInfo.id}
         </span>
       )}
 
       {/* Title */}
-      <p className="text-sm font-semibold text-gray-800 leading-snug">{brief.name}</p>
+      <p className="text-sm font-semibold text-gray-800 dark:text-slate-100 leading-snug">{brief.name}</p>
 
       {/* Status badges */}
       <div className="flex gap-1.5 flex-wrap mt-2 mb-3">
         {isRevisions && (
-          <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-red-50 text-red-500 border border-red-100">
+          <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-red-50 dark:bg-red-500/15 text-red-500 dark:text-red-300 border border-red-100 dark:border-red-400/30">
             Revisions requested
           </span>
         )}
         {isWithClient && !isRevisions && (
-          <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-blue-50 text-blue-600 border border-blue-100">
+          <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300 border border-blue-100 dark:border-blue-400/30">
             With client
           </span>
         )}
@@ -418,18 +429,18 @@ export function BriefCard({
               ⬆ Up next
             </span>
           ) : (
-            <span className="rounded-full px-2 py-0.5 text-[10px] font-medium bg-gray-50 text-gray-400 border border-gray-100">
+            <span className="rounded-full px-2 py-0.5 text-[10px] font-medium bg-gray-50 dark:bg-white/5 text-gray-400 dark:text-zinc-400 border border-gray-100 dark:border-white/10">
               Not started
             </span>
           )
         )}
         {!hasDraft && reviewMode && (
-          <span className="rounded-full px-2 py-0.5 text-[10px] font-medium bg-gray-50 text-gray-400 border border-gray-100">
+          <span className="rounded-full px-2 py-0.5 text-[10px] font-medium bg-gray-50 dark:bg-white/5 text-gray-400 dark:text-zinc-400 border border-gray-100 dark:border-white/10">
             Awaiting draft
           </span>
         )}
         {brief.due_date && (
-          <span className="rounded-full px-2 py-0.5 text-[10px] font-medium bg-gray-50 text-gray-400 border border-gray-100">
+          <span className="rounded-full px-2 py-0.5 text-[10px] font-medium bg-gray-50 dark:bg-white/5 text-gray-400 dark:text-zinc-400 border border-gray-100 dark:border-white/10">
             Due {format(new Date(brief.due_date), 'd MMM')}
           </span>
         )}
@@ -454,7 +465,7 @@ export function BriefCard({
             href={brief.draft_url!}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 py-2 text-xs font-semibold text-gray-600 cursor-pointer hover:bg-gray-50 transition-colors"
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 dark:border-white/10 py-2 text-xs font-semibold text-gray-600 dark:text-zinc-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 dark:hover:text-white transition-colors"
           >
             <Play className="h-3 w-3" />
             View Draft
@@ -463,7 +474,7 @@ export function BriefCard({
           <button
             type="button"
             disabled
-            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-gray-100 py-2 text-xs font-medium text-gray-300 cursor-not-allowed"
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-gray-100 dark:border-white/[0.06] py-2 text-xs font-medium text-gray-300 dark:text-white/20 cursor-not-allowed"
           >
             <Play className="h-3 w-3" />
             View Draft
@@ -478,7 +489,7 @@ export function BriefCard({
             className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold transition-colors ${
               reviewMode && hasDraft
                 ? 'bg-emerald-500 text-white hover:bg-emerald-600 cursor-pointer'
-                : 'bg-gray-50 text-gray-300 border border-gray-100 cursor-not-allowed'
+                : 'bg-gray-50 dark:bg-white/[0.04] text-gray-300 dark:text-white/20 border border-gray-100 dark:border-white/[0.06] cursor-not-allowed'
             }`}
           >
             {approving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
@@ -493,7 +504,7 @@ export function BriefCard({
           {...STOP_DRAG}
           onClick={e => { e.stopPropagation(); requestRevisions() }}
           disabled={revisioning}
-          className="mt-2 w-full flex items-center justify-center gap-1.5 rounded-xl border border-red-100 py-2 text-xs font-semibold text-red-500 cursor-pointer hover:bg-red-50 transition-colors"
+          className="mt-2 w-full flex items-center justify-center gap-1.5 rounded-xl border border-red-100 dark:border-red-400/30 py-2 text-xs font-semibold text-red-500 dark:text-red-300 cursor-pointer hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
         >
           {revisioning ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
           Request Revisions
@@ -502,10 +513,10 @@ export function BriefCard({
 
       {/* Hub-only: assigned designer chip */}
       {brief.assigned_designer && (
-        <div className="flex items-center gap-1.5 mt-2.5 pt-2.5 border-t border-gray-50">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Designer</span>
+        <div className="flex items-center gap-1.5 mt-2.5 pt-2.5 border-t border-gray-50 dark:border-white/[0.06]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-zinc-400">Designer</span>
           <UserAvatar user={brief.assigned_designer} size={20} tint="#4950F8" />
-          <span className="text-[11px] font-medium text-gray-600 truncate">{brief.assigned_designer.name ?? '—'}</span>
+          <span className="text-[11px] font-medium text-gray-600 dark:text-zinc-300 truncate">{brief.assigned_designer.name ?? '—'}</span>
         </div>
       )}
     </div>
@@ -519,9 +530,9 @@ export function BriefCard({
 export function ApprovedBriefCard({ brief, showClientChip = false }: { brief: Brief; clientColor?: string; showClientChip?: boolean }) {
   const typeInfo = CONTENT_TYPES.find(t => t.id === brief.content_type)
   return (
-    <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-4">
+    <div className="rounded-2xl bg-white dark:bg-[#161B26] border border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none p-4">
       {showClientChip && brief.client_name && (
-        <div className="flex items-center gap-1.5 mb-2 pb-2 border-b border-gray-50">
+        <div className="flex items-center gap-1.5 mb-2 pb-2 border-b border-gray-50 dark:border-white/[0.06]">
           <div
             className="h-4 w-4 rounded flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0 overflow-hidden"
             style={{ backgroundColor: brief.client_color ?? '#4950F8' }}
@@ -532,18 +543,22 @@ export function ApprovedBriefCard({ brief, showClientChip = false }: { brief: Br
               : brief.client_name.slice(0, 2).toUpperCase()
             }
           </div>
-          <span className="text-[10px] font-semibold text-gray-500 truncate">{brief.client_name}</span>
+          <span className="text-[10px] font-semibold text-gray-500 dark:text-zinc-400 truncate">{brief.client_name}</span>
         </div>
       )}
       <div className="flex items-start gap-3">
         <CheckCircle2 className="h-4 w-4 mt-0.5 flex-shrink-0 text-emerald-500" />
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-800 leading-snug truncate">{brief.name}</p>
-          {brief.campaign && <p className="text-xs text-gray-400 mt-0.5">{brief.campaign}</p>}
+          <p className="text-sm font-semibold text-gray-800 dark:text-slate-100 leading-snug truncate">{brief.name}</p>
+          {brief.campaign && <p className="text-xs text-gray-400 dark:text-zinc-500 mt-0.5">{brief.campaign}</p>}
           {typeInfo && (
             <span
-              className="mt-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold"
-              style={{ backgroundColor: `${typeInfo.color}18`, color: typeInfo.color }}
+              className="mt-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold [background-color:var(--chip-bg-light)] dark:[background-color:var(--chip-bg-dark)]"
+              style={{
+                ['--chip-bg-light' as string]: `${typeInfo.color}18`,
+                ['--chip-bg-dark'  as string]: `${typeInfo.color}10`,
+                color: typeInfo.color,
+              } as React.CSSProperties}
             >
               {typeInfo.id}
             </span>
@@ -551,7 +566,7 @@ export function ApprovedBriefCard({ brief, showClientChip = false }: { brief: Br
         </div>
         {brief.draft_url && (
           <a href={brief.draft_url} target="_blank" rel="noopener noreferrer"
-            className="text-gray-300 hover:text-gray-500 transition-colors flex-shrink-0 mt-0.5">
+            className="text-gray-300 dark:text-white/25 hover:text-gray-500 dark:hover:text-white/60 transition-colors flex-shrink-0 mt-0.5">
             <ExternalLink className="h-3.5 w-3.5" />
           </a>
         )}

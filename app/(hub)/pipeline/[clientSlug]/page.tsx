@@ -376,7 +376,7 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
 
           {loading ? (
             <div className="flex gap-3 overflow-x-auto pb-2">
-              {[1,2,3].map(n => <div key={n} className="flex-shrink-0 w-[272px] h-96 rounded-2xl bg-gray-200 animate-pulse" />)}
+              {[1,2,3].map(n => <div key={n} className="flex-shrink-0 w-[272px] h-96 rounded-2xl bg-gray-200 dark:bg-white/5 animate-pulse" />)}
             </div>
           ) : (
             // Trello-style: fixed 272px columns, board scrolls horizontally
@@ -384,18 +384,18 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
             <div className="flex gap-3 items-start overflow-x-auto pb-2">
 
               {/* Backlog */}
-              <div className="flex-shrink-0 w-[272px] flex flex-col max-h-[calc(100vh-14rem)] bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50 flex-shrink-0">
+              <div className="flex-shrink-0 w-[272px] flex flex-col max-h-[calc(100vh-14rem)] bg-white dark:bg-[#0F1420] rounded-2xl border border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50 dark:border-white/[0.06] flex-shrink-0">
                   <div className="flex items-center gap-2">
                     <span className="h-2 w-2 rounded-full bg-amber-400 flex-shrink-0" />
-                    <h3 className="text-sm font-semibold text-gray-800">Backlog</h3>
-                    <span className="text-[11px] font-medium text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">
+                    <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100">Backlog</h3>
+                    <span className="text-[11px] font-medium text-gray-400 dark:text-zinc-400 bg-gray-100 dark:bg-white/10 rounded-full px-2 py-0.5">
                       {backlogOrder.length}
                     </span>
                   </div>
                   <button
                     onClick={() => setShowBriefModal(true)}
-                    className="h-7 w-7 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 transition-colors"
+                    className="h-7 w-7 rounded-lg flex items-center justify-center text-gray-400 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-700 dark:hover:text-white transition-colors"
                   >
                     <Plus className="h-4 w-4" />
                   </button>
@@ -434,8 +434,8 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
                       ))}
                       {provided.placeholder}
                       {backlogOrder.length === 0 && (
-                        <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50/50 py-12 text-center">
-                          <p className="text-xs text-gray-400">No briefs in backlog</p>
+                        <div className="rounded-2xl border border-dashed border-gray-200 dark:border-white/[0.08] bg-gray-50/50 dark:bg-white/[0.02] py-12 text-center">
+                          <p className="text-xs text-gray-400 dark:text-zinc-500">No briefs in backlog</p>
                         </div>
                       )}
                     </div>
@@ -444,12 +444,12 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
               </div>
 
               {/* In Production */}
-              <div className="flex-shrink-0 w-[272px] flex flex-col max-h-[calc(100vh-14rem)] bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50 flex-shrink-0">
+              <div className="flex-shrink-0 w-[272px] flex flex-col max-h-[calc(100vh-14rem)] bg-white dark:bg-[#0F1420] rounded-2xl border border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50 dark:border-white/[0.06] flex-shrink-0">
                   <div className="flex items-center gap-2">
                     <span className="h-2 w-2 rounded-full bg-blue-400 flex-shrink-0" />
-                    <h3 className="text-sm font-semibold text-gray-800">In Production</h3>
-                    <span className="text-[11px] font-medium text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">
+                    <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100">In Production</h3>
+                    <span className="text-[11px] font-medium text-gray-400 dark:text-zinc-400 bg-gray-100 dark:bg-white/10 rounded-full px-2 py-0.5">
                       {inProduction.length}
                     </span>
                   </div>
@@ -488,9 +488,9 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
                       ))}
                       {provided.placeholder}
                       {inProduction.length === 0 && (
-                        <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50/50 py-12 text-center">
-                          <p className="text-xs text-gray-400">Nothing in production yet</p>
-                          <p className="text-[11px] text-gray-300 mt-1">Drag a brief here or approve one</p>
+                        <div className="rounded-2xl border border-dashed border-gray-200 dark:border-white/[0.08] bg-gray-50/50 dark:bg-white/[0.02] py-12 text-center">
+                          <p className="text-xs text-gray-400 dark:text-zinc-500">Nothing in production yet</p>
+                          <p className="text-[11px] text-gray-300 dark:text-zinc-600 mt-1">Drag a brief here or approve one</p>
                         </div>
                       )}
                     </div>
@@ -499,12 +499,12 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
               </div>
 
               {/* Approved */}
-              <div className="flex-shrink-0 w-[272px] flex flex-col max-h-[calc(100vh-14rem)] bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50 flex-shrink-0">
+              <div className="flex-shrink-0 w-[272px] flex flex-col max-h-[calc(100vh-14rem)] bg-white dark:bg-[#0F1420] rounded-2xl border border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50 dark:border-white/[0.06] flex-shrink-0">
                   <div className="flex items-center gap-2">
                     <span className="h-2 w-2 rounded-full bg-emerald-400 flex-shrink-0" />
-                    <h3 className="text-sm font-semibold text-gray-800">Approved</h3>
-                    <span className="text-[11px] font-medium text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">
+                    <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100">Approved</h3>
+                    <span className="text-[11px] font-medium text-gray-400 dark:text-zinc-400 bg-gray-100 dark:bg-white/10 rounded-full px-2 py-0.5">
                       {allApproved.length}
                     </span>
                   </div>
@@ -515,14 +515,14 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
                     <ApprovedBriefCard key={brief.id} brief={brief} clientColor={clientColor} />
                   ))}
                   {allApproved.length === 0 && (
-                    <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50/50 py-12 text-center">
-                      <p className="text-xs text-gray-400">No approved briefs yet</p>
+                    <div className="rounded-2xl border border-dashed border-gray-200 dark:border-white/[0.08] bg-gray-50/50 dark:bg-white/[0.02] py-12 text-center">
+                      <p className="text-xs text-gray-400 dark:text-zinc-500">No approved briefs yet</p>
                     </div>
                   )}
                   {allApproved.length > 10 && (
                     <button
                       onClick={() => setShowAllApproved(v => !v)}
-                      className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white py-2.5 text-xs font-medium text-gray-500 hover:bg-gray-50 transition-colors"
+                      className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 py-2.5 text-xs font-medium text-gray-500 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-white/10 dark:hover:text-white transition-colors"
                     >
                       <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showAllApproved ? 'rotate-180' : ''}`} />
                       {showAllApproved ? 'Show less' : `See all ${allApproved.length} approved`}
