@@ -22,7 +22,9 @@ export function Sidebar() {
   return (
     <aside className="fixed inset-y-0 left-0 z-30 flex w-60 flex-col border-r border-[var(--border)] bg-[var(--surface)]">
       {/* Brand block — SwipeUp logo top-left.
-          SwipeUp_White.svg is white; in light mode we invert to near-black. */}
+          SwipeUp_White.svg is white; in light mode we invert to near-black.
+          `unoptimized` mirrors the Portal's footer usage so Next's image
+          optimiser doesn't cache a filter-stripped variant. */}
       <Link
         href="/"
         aria-label="SwipeUp Hub — home"
@@ -34,6 +36,7 @@ export function Sidebar() {
           width={120}
           height={28}
           priority
+          unoptimized
           className="h-6 w-auto dark:[filter:none] [filter:invert(1)]"
         />
       </Link>
@@ -62,12 +65,6 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Footer: left empty for now — profile/actions moved to top bar */}
-      <div className="px-5 py-4 border-t border-[var(--border)]">
-        <p className="text-[10px] text-[var(--text-dim)] text-center">
-          SwipeUp Hub — internal
-        </p>
-      </div>
     </aside>
   )
 }
