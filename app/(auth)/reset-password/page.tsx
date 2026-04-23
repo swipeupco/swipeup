@@ -1,5 +1,12 @@
 'use client'
 
+/**
+ * Hub reset-password page — ported verbatim from the SwipeUp Portal's
+ * /reset-password (src/app/(auth)/reset-password/page.tsx). No Hub-specific
+ * changes; the page reads the session set by the auth callback and lets the
+ * user choose a new password before being redirected to /login.
+ */
+
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -13,6 +20,19 @@ export default function ResetPasswordPage() {
   const [success, setSuccess]   = useState(false)
   const [checkingSession, setCheckingSession] = useState(true)
   const router = useRouter()
+
+  const [formattedDate, setFormattedDate] = useState<string | null>(null)
+  useEffect(() => {
+    const updateClock = () => {
+      setFormattedDate(
+        new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'short' })
+          .format(new Date())
+      )
+    }
+    updateClock()
+    const timer = setInterval(updateClock, 1000)
+    return () => clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     const supabase = createClient()
@@ -55,6 +75,13 @@ export default function ResetPasswordPage() {
   const logo = (
     <div className="flex justify-center mb-8">
       <Image src="/SwipeUp_White.svg" alt="SwipeUp" width={160} height={39} priority />
+    </div>
+  )
+
+  const FooterClock = () => (
+    <div className="flex flex-col items-center gap-1 mt-8">
+      <p className="text-zinc-500 text-[10px] uppercase tracking-wider">{formattedDate || ''}</p>
+      <p className="text-zinc-600 text-xs font-medium">Built by SwipeUp</p>
     </div>
   )
 
@@ -149,6 +176,8 @@ export default function ResetPasswordPage() {
           </>
         )}
       </div>
+
+      <FooterClock />
     </div>
   )
 }

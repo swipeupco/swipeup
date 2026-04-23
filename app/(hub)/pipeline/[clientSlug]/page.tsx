@@ -1,156 +1,111 @@
 'use client'
 
+/**
+ * Per-client board — mirrors the Portal's Creative Requests page exactly.
+ *
+ * 3 columns: Backlog, In Production, Approved (the same as the Portal's
+ * /trello page). "Ready for Review" is an internal-only stage and lives
+ * only on the master Production Pipeline view.
+ *
+ * Hub-only overlays:
+ *   - Sticky header with a "Back" button and the "Client portal" link.
+ *   - BriefCard shows a tiny assigned-designer chip on the bottom row.
+ *   - BriefPanel exposes an "Internal" comments tab (is_internal=true) and
+ *     an "Assigned designer" picker that writes to briefs.assigned_to.
+ *   - "With client" blue pill on a card when pipeline_status='client_review'.
+ *
+ * All styling, spacing, and card/drawer chrome is ported from the Portal
+ * (see components/pipeline/PortalBoard.tsx).
+ */
+
+export const dynamic = 'force-dynamic'
+
 import { useEffect, useState, use } from 'react'
+import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd'
+import { Plus, ChevronDown, ArrowLeft, ExternalLink, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import {
-  ArrowLeft, ExternalLink, Plus, X, Loader2, Play,
-  Video, Image as ImageIcon, Mail, LayoutGrid, Mic, FileText, CircleDot,
-} from 'lucide-react'
-import { format } from 'date-fns'
-import { BriefDrawer } from '@/components/pipeline/BriefDrawer'
-import { CLIENT_STAGES as STAGES } from '@/lib/pipeline/stages'
-import { updateBriefStatus } from '@/lib/pipeline/updateBriefStatus'
+  Brief, BriefCard, ApprovedBriefCard, BriefPanel, CreateBriefModal,
+} from '@/components/pipeline/PortalBoard'
 
-const CONTENT_TYPES = [
-  { id: 'Video',     icon: Video,      color: '#22c55e' },
-  { id: 'Graphic',   icon: ImageIcon,  color: '#f97316' },
-  { id: 'EDM',       icon: Mail,       color: '#ef4444' },
-  { id: 'Signage',   icon: LayoutGrid, color: '#0ea5e9' },
-  { id: 'Voiceover', icon: Mic,        color: '#a855f7' },
-  { id: 'Script',    icon: FileText,   color: '#f59e0b' },
-  { id: 'Other',     icon: CircleDot,  color: '#94a3b8' },
-]
-
-interface Client {
-  id: string
-  name: string
-  slug: string
-  color: string
-}
-
-interface Brief {
-  id: string
-  name: string
-  description: string | null
-  campaign: string | null
-  content_type: string | null
-  pipeline_status: string
-  internal_status: string | null
-  draft_url: string | null
-  due_date: string | null
-  client_id: string
-  cover_url?: string | null
-  created_by?: string | null
-  creator?: { id: string; name: string | null; avatar_url: string | null } | null
-  tagged_users?: { id: string; name: string | null; avatar_url: string | null }[]
-}
-
-function initialsOf(name: string | null | undefined) {
-  if (!name) return '?'
-  const parts = name.trim().split(/\s+/)
-  return parts.length >= 2
-    ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-    : parts[0].slice(0, 2).toUpperCase()
-}
-
-function UserAvatar({
-  user, size = 24, ring = false, tint = '#4950F8',
-}: {
-  user: { name: string | null; avatar_url: string | null } | null | undefined
-  size?: number
-  ring?: boolean
-  tint?: string
-}) {
-  const title = user?.name ?? 'Unknown'
-  return (
-    <div
-      title={title}
-      className={`rounded-full flex items-center justify-center text-white font-bold overflow-hidden flex-shrink-0 ${ring ? 'ring-2 ring-white' : ''}`}
-      style={{ width: size, height: size, fontSize: Math.max(9, size * 0.4), backgroundColor: tint }}
-    >
-      {user?.avatar_url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={user.avatar_url} alt={title} className="h-full w-full object-cover" />
-      ) : (
-        initialsOf(user?.name)
-      )}
-    </div>
-  )
-}
-
-function StackedAvatars({
-  users, max = 3, size = 22, tint = '#4950F8',
-}: {
-  users: { id: string; name: string | null; avatar_url: string | null }[]
-  max?: number
-  size?: number
-  tint?: string
-}) {
-  const visible = users.slice(0, max)
-  const extra   = users.length - visible.length
-  return (
-    <div className="flex items-center">
-      {visible.map((u, i) => (
-        <div key={u.id} className={i === 0 ? '' : '-ml-2'}>
-          <UserAvatar user={u} size={size} ring tint={tint} />
-        </div>
-      ))}
-      {extra > 0 && (
-        <div
-          className="-ml-2 rounded-full ring-2 ring-white bg-gray-100 text-[10px] font-bold text-gray-600 flex items-center justify-center"
-          style={{ width: size, height: size }}
-          title={`${extra} more`}
-        >
-          +{extra}
-        </div>
-      )}
-    </div>
-  )
-}
+interface Client { id: string; name: string; slug: string; color: string; logo_url: string | null }
+interface HubStaffLite { id: string; name: string | null; avatar_url: string | null; email: string | null }
 
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'portal.swipeupco.com'
 
 export default function ClientPipeline({ params }: { params: Promise<{ clientSlug: string }> }) {
   const { clientSlug } = use(params)
-  const [client, setClient]           = useState<Client | null>(null)
-  const [briefs, setBriefs]           = useState<Brief[]>([])
-  const [loading, setLoading]         = useState(true)
-  const [selectedBrief, setSelectedBrief] = useState<Brief | null>(null)
-  const [showNewBrief, setShowNewBrief]   = useState(false)
   const router = useRouter()
 
-  async function load() {
-    const supabase = createClient()
-    const { data: clientData } = await supabase
-      .from('clients')
-      .select('*')
-      .eq('slug', clientSlug)
-      .single()
+  const [client, setClient]           = useState<Client | null>(null)
+  const [briefs, setBriefs]           = useState<Brief[]>([])
+  const [backlogOrder, setBacklogOrder] = useState<Brief[]>([])
+  const [hubStaff, setHubStaff]       = useState<HubStaffLite[]>([])
+  const [loading, setLoading]         = useState(true)
+  const [selectedBrief, setSelectedBrief] = useState<Brief | null>(null)
+  const [showBriefModal, setShowBriefModal] = useState(false)
+  const [showAllApproved, setShowAllApproved] = useState(false)
 
+  async function load(silent = false) {
+    if (!silent) setLoading(true)
+    const supabase = createClient()
+
+    const { data: clientData } = await supabase
+      .from('clients').select('*').eq('slug', clientSlug).single()
     if (!clientData) { setLoading(false); return }
     setClient(clientData)
 
-    const { data: briefData } = await supabase
-      .from('briefs')
-      .select('*')
-      .eq('client_id', clientData.id)
-      .order('pos', { ascending: true })
+    const [{ data: briefData }, { data: staffData }] = await Promise.all([
+      supabase
+        .from('briefs')
+        .select('*')
+        .eq('client_id', clientData.id)
+        .order('sort_order', { ascending: true }),
+      supabase
+        .from('profiles')
+        .select('id, name, avatar_url, email')
+        .or('hub_role.eq.admin,hub_role.eq.designer,is_staff.eq.true,is_admin.eq.true'),
+    ])
 
-    const all = (briefData as unknown as Brief[]) ?? []
+    const all = (briefData ?? []) as Brief[]
+    setHubStaff((staffData as HubStaffLite[]) ?? [])
+
+    // Enforce: only 1 brief in production at a time (same rule the Portal uses)
+    const inProd = all.filter(b => ['in_production','client_review','qa_review'].includes(b.pipeline_status))
+    if (inProd.length > 1) {
+      const toBacklog = inProd.slice(1)
+      await Promise.all(toBacklog.map(b =>
+        supabase.from('briefs').update({ pipeline_status: 'backlog', internal_status: 'backlog' }).eq('id', b.id)
+      ))
+      toBacklog.forEach(b => { b.pipeline_status = 'backlog'; b.internal_status = 'backlog' })
+    }
+
+    // Enrich with creator, tagged_users, and the Hub's assigned_designer.
     const briefIds   = all.map(b => b.id)
     const creatorIds = [...new Set(all.map(b => b.created_by).filter(Boolean))] as string[]
+    const assigneeIds = [...new Set(all.map(b => b.assigned_to).filter(Boolean))] as string[]
 
-    const tagsRes = briefIds.length
-      ? await supabase.from('brief_assigned_users').select('brief_id, user_id').in('brief_id', briefIds)
-      : { data: [] as { brief_id: string; user_id: string }[] }
+    const [tagsRes, creatorsRes] = await Promise.all([
+      briefIds.length
+        ? supabase.from('brief_assigned_users').select('brief_id, user_id').in('brief_id', briefIds)
+        : Promise.resolve({ data: [] as { brief_id: string; user_id: string }[] }),
+      creatorIds.length
+        ? supabase.from('profiles').select('id, name, avatar_url').in('id', creatorIds)
+        : Promise.resolve({ data: [] as { id: string; name: string | null; avatar_url: string | null }[] }),
+    ])
+
     const tagRows = (tagsRes.data ?? []) as { brief_id: string; user_id: string }[]
+    const taggedIds = [...new Set(tagRows.map(r => r.user_id))]
+    const allProfileIds = [...new Set([...creatorIds, ...taggedIds, ...assigneeIds])]
 
-    const profileIds = [...new Set([...creatorIds, ...tagRows.map(r => r.user_id)])]
-    let profileMap: Record<string, { id: string; name: string | null; avatar_url: string | null }> = {}
-    if (profileIds.length) {
-      const { data: profs } = await supabase.from('profiles').select('id, name, avatar_url').in('id', profileIds)
-      ;(profs ?? []).forEach(p => { profileMap[p.id] = p })
+    const profileMap: Record<string, { id: string; name: string | null; avatar_url: string | null }> = {}
+    const seed = (creatorsRes.data ?? []) as { id: string; name: string | null; avatar_url: string | null }[]
+    seed.forEach(p => { profileMap[p.id] = p })
+    const missing = allProfileIds.filter(id => !profileMap[id])
+    if (missing.length) {
+      const { data: extra } = await supabase.from('profiles').select('id, name, avatar_url').in('id', missing)
+      ;(extra ?? []).forEach(p => { profileMap[p.id] = p })
     }
 
     const enriched = all.map(b => ({
@@ -160,9 +115,11 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
         .filter(r => r.brief_id === b.id)
         .map(r => profileMap[r.user_id])
         .filter(Boolean),
+      assigned_designer: b.assigned_to ? profileMap[b.assigned_to] ?? null : null,
     }))
 
     setBriefs(enriched)
+    setSelectedBrief(prev => prev ? enriched.find(b => b.id === prev.id) ?? null : null)
     setLoading(false)
   }
 
@@ -170,444 +127,448 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
     load()
     const supabase = createClient()
     const channel = supabase
-      .channel(`briefs-client-${clientSlug}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'briefs' }, () => load())
+      .channel(`client-briefs-${clientSlug}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'briefs' }, () => load(true))
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientSlug])
 
-  async function moveToStage(briefId: string, newPipelineStage: string) {
-    // Optimistic update
-    setBriefs(prev => prev.map(b =>
-      b.id === briefId ? { ...b, pipeline_status: newPipelineStage } : b
-    ))
-    if (selectedBrief?.id === briefId) {
-      setSelectedBrief(prev => prev ? { ...prev, pipeline_status: newPipelineStage } : null)
-    }
-
-    // Write both fields atomically
-    const updates = await updateBriefStatus(briefId, { pipeline_status: newPipelineStage })
-
-    // Sync internal_status back to local state
-    setBriefs(prev => prev.map(b => b.id === briefId ? { ...b, ...updates } : b))
-    if (selectedBrief?.id === briefId) {
-      setSelectedBrief(prev => prev ? { ...prev, ...updates } : null)
-    }
-  }
-
-  async function moveInternalStage(briefId: string, newInternalStage: string) {
-    // Internal status can change independently of pipeline_status
-    setBriefs(prev => prev.map(b =>
-      b.id === briefId ? { ...b, internal_status: newInternalStage } : b
-    ))
-    if (selectedBrief?.id === briefId) {
-      setSelectedBrief(prev => prev ? { ...prev, internal_status: newInternalStage } : null)
-    }
-    const supabase = createClient()
-    await supabase.from('briefs').update({ internal_status: newInternalStage }).eq('id', briefId)
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="h-6 w-6 border-2 border-[#14C29F] border-t-transparent rounded-full animate-spin" />
-      </div>
+  useEffect(() => {
+    setBacklogOrder(
+      briefs
+        .filter(b => b.pipeline_status === 'backlog')
+        .sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999))
     )
+  }, [briefs])
+
+  // ── DnD identical to Portal's trello page ─────────────────────────────────
+  async function handleDragEnd(result: DropResult) {
+    const { source, destination, draggableId } = result
+    if (!destination) return
+    if (source.droppableId === destination.droppableId && source.index === destination.index) return
+
+    const supabase = createClient()
+
+    if (source.droppableId === 'backlog' && destination.droppableId === 'backlog') {
+      const items = Array.from(backlogOrder)
+      const [moved] = items.splice(source.index, 1)
+      items.splice(destination.index, 0, moved)
+      setBacklogOrder(items)
+      await Promise.all(items.map((b, i) => supabase.from('briefs').update({ sort_order: i }).eq('id', b.id)))
+      return
+    }
+
+    if (source.droppableId === 'backlog' && destination.droppableId === 'in-production') {
+      const currentInProd = briefs.filter(b => ['in_production','client_review','qa_review'].includes(b.pipeline_status))
+      if (currentInProd.length > 0) {
+        await Promise.all(currentInProd.map(b =>
+          supabase.from('briefs').update({ pipeline_status: 'backlog', internal_status: 'backlog' }).eq('id', b.id)
+        ))
+      }
+      await supabase.from('briefs')
+        .update({ pipeline_status: 'in_production', internal_status: 'in_production' })
+        .eq('id', draggableId)
+      setBriefs(prev => prev.map(b => {
+        if (currentInProd.find(p => p.id === b.id)) return { ...b, pipeline_status: 'backlog', internal_status: 'backlog' }
+        if (b.id === draggableId) return { ...b, pipeline_status: 'in_production', internal_status: 'in_production' }
+        return b
+      }))
+      return
+    }
+
+    if (source.droppableId === 'in-production' && destination.droppableId === 'backlog') {
+      await supabase.from('briefs')
+        .update({ pipeline_status: 'backlog', internal_status: 'backlog' })
+        .eq('id', draggableId)
+      setBriefs(prev => prev.map(b =>
+        b.id === draggableId ? { ...b, pipeline_status: 'backlog', internal_status: 'backlog' } : b
+      ))
+      return
+    }
   }
 
-  if (!client) return <div className="p-8 text-zinc-500">Client not found.</div>
+  async function handleApprove(briefId: string) {
+    const supabase = createClient()
+    await supabase
+      .from('briefs')
+      .update({ pipeline_status: 'approved', internal_status: 'approved_by_client' })
+      .eq('id', briefId)
 
-  const portalUrl = `https://${client.slug}.${ROOT_DOMAIN}`
+    let newBriefs = briefs.map(b =>
+      b.id === briefId ? { ...b, pipeline_status: 'approved', internal_status: 'approved_by_client' } : b
+    )
+
+    // Auto-promote top backlog brief if production slot is now empty
+    const wasInProduction = briefs.filter(b =>
+      ['in_production', 'client_review', 'qa_review'].includes(b.pipeline_status)
+    )
+    const nextBacklog = briefs
+      .filter(b => b.pipeline_status === 'backlog')
+      .sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999))[0]
+
+    if (wasInProduction.length === 1 && nextBacklog) {
+      await supabase
+        .from('briefs')
+        .update({ pipeline_status: 'in_production', internal_status: 'in_production' })
+        .eq('id', nextBacklog.id)
+      newBriefs = newBriefs.map(b =>
+        b.id === nextBacklog.id ? { ...b, pipeline_status: 'in_production', internal_status: 'in_production' } : b
+      )
+    }
+
+    setBriefs(newBriefs)
+    if (selectedBrief?.id === briefId) {
+      setSelectedBrief(prev => prev ? { ...prev, pipeline_status: 'approved', internal_status: 'approved_by_client' } : null)
+    }
+  }
+
+  async function handleRequestRevisions(briefId: string) {
+    const supabase = createClient()
+    await supabase
+      .from('briefs')
+      .update({ pipeline_status: 'client_review', internal_status: 'revisions_required' })
+      .eq('id', briefId)
+    setBriefs(prev => prev.map(b =>
+      b.id === briefId ? { ...b, pipeline_status: 'client_review', internal_status: 'revisions_required' } : b
+    ))
+    if (selectedBrief?.id === briefId) {
+      setSelectedBrief(prev => prev ? { ...prev, pipeline_status: 'client_review', internal_status: 'revisions_required' } : null)
+    }
+  }
+
+  async function handleDeleteBrief(briefId: string) {
+    const supabase = createClient()
+    await supabase.from('brief_comments').delete().eq('brief_id', briefId)
+    await supabase.from('notifications').delete().eq('link', `/trello?briefId=${briefId}`)
+    await supabase.storage.from('brief-assets').remove([`brief-covers/${briefId}.jpg`])
+    const { error } = await supabase.from('briefs').delete().eq('id', briefId)
+    if (error) { alert(`Could not delete brief: ${error.message}`); return }
+    setBriefs(prev => prev.filter(b => b.id !== briefId))
+    setSelectedBrief(null)
+  }
+
+  async function handleCoverUpload(briefId: string, file: File | null) {
+    if (!file) return
+    const MAX_MB = 10
+    if (file.size > MAX_MB * 1024 * 1024) { alert(`Image is too large. Max ${MAX_MB}MB.`); return }
+    const ACCEPTED = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']
+    if (!ACCEPTED.includes(file.type)) { alert(`Unsupported file type "${file.type}".`); return }
+
+    let compressed: Blob
+    try {
+      compressed = await new Promise<Blob>((resolve, reject) => {
+        const img = document.createElement('img')
+        const url = URL.createObjectURL(file)
+        img.onload = () => {
+          URL.revokeObjectURL(url)
+          const MAX = 800
+          const scale = img.width > MAX ? MAX / img.width : 1
+          const canvas = document.createElement('canvas')
+          canvas.width  = Math.round(img.width  * scale)
+          canvas.height = Math.round(img.height * scale)
+          canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+          canvas.toBlob(b => b ? resolve(b) : reject(new Error('Compression failed')), 'image/jpeg', 0.82)
+        }
+        img.onerror = (e) => reject(new Error(`Image load error: ${e}`))
+        img.src = url
+      })
+    } catch (err) { alert(`Image compression failed: ${err}`); return }
+
+    const supabase = createClient()
+    const path = `brief-covers/${briefId}.jpg`
+    const { error: uploadError } = await supabase.storage
+      .from('brief-assets')
+      .upload(path, compressed, { upsert: true, contentType: 'image/jpeg' })
+    if (uploadError) { alert(`Cover upload failed: ${uploadError.message}`); return }
+
+    const { data: { publicUrl } } = supabase.storage.from('brief-assets').getPublicUrl(path)
+    const bustedUrl = `${publicUrl}?t=${Date.now()}`
+    await supabase.from('briefs').update({ cover_url: bustedUrl }).eq('id', briefId)
+    setBriefs(prev => prev.map(b => b.id === briefId ? { ...b, cover_url: bustedUrl } : b))
+    setSelectedBrief(prev => prev?.id === briefId ? { ...prev, cover_url: bustedUrl } : prev)
+  }
+
+  async function handleCoverDelete(briefId: string) {
+    const supabase = createClient()
+    await supabase.storage.from('brief-assets').remove([`brief-covers/${briefId}.jpg`])
+    await supabase.from('briefs').update({ cover_url: null }).eq('id', briefId)
+    setBriefs(prev => prev.map(b => b.id === briefId ? { ...b, cover_url: null } : b))
+    setSelectedBrief(prev => prev?.id === briefId ? { ...prev, cover_url: null } : prev)
+  }
+
+  async function handleAssignDesigner(briefId: string, staffId: string | null) {
+    const supabase = createClient()
+    await supabase.from('briefs').update({ assigned_to: staffId }).eq('id', briefId)
+    const designer = staffId ? hubStaff.find(s => s.id === staffId) ?? null : null
+    setBriefs(prev => prev.map(b => b.id === briefId ? {
+      ...b,
+      assigned_to: staffId,
+      assigned_designer: designer ? { id: designer.id, name: designer.name, avatar_url: designer.avatar_url } : null,
+    } : b))
+    setSelectedBrief(prev => prev?.id === briefId ? {
+      ...prev,
+      assigned_to: staffId,
+      assigned_designer: designer ? { id: designer.id, name: designer.name, avatar_url: designer.avatar_url } : null,
+    } : prev)
+  }
+
+  const inProduction  = briefs.filter(b => ['in_production', 'client_review', 'qa_review'].includes(b.pipeline_status))
+  const allApproved   = briefs.filter(b => b.pipeline_status === 'approved')
+  const approvedCards = showAllApproved ? allApproved : allApproved.slice(0, 10)
+
+  const clientColor = client?.color ?? '#4950F8'
+  const portalUrl = client ? `https://${client.slug}.${ROOT_DOMAIN}` : '#'
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-zinc-200 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => router.push('/')}
-            className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <div
-            className="h-8 w-8 rounded-lg flex items-center justify-center text-white font-bold text-xs"
-            style={{ backgroundColor: client.color }}
-          >
-            {client.name.slice(0, 2).toUpperCase()}
-          </div>
-          <div>
-            <h1 className="font-semibold text-zinc-900">{client.name}</h1>
-            <p className="text-xs text-zinc-400">{briefs.length} briefs</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <a
-            href={portalUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium border border-zinc-200 text-zinc-600 hover:bg-zinc-50 transition-colors"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Client portal
-          </a>
-          <button
-            onClick={() => setShowNewBrief(true)}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ backgroundColor: client.color }}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            New Brief
-          </button>
-        </div>
-      </div>
-
-      {/* Kanban board */}
-      <div className="flex-1 overflow-x-auto overflow-y-hidden">
-        <div className="flex h-full gap-0 min-w-max">
-          {STAGES.map((stage, i) => {
-            const stageBriefs = briefs.filter(b => b.pipeline_status === stage.key)
-            const isLast = i === STAGES.length - 1
-
-            return (
-              <div
-                key={stage.key}
-                className={`flex flex-col w-72 h-full ${stage.color} ${!isLast ? 'border-r border-zinc-200' : ''}`}
+    // Isolate the Portal's light visual context from the Hub's dark shell.
+    <div className="bg-[#F7F8FA] text-gray-900 min-h-[calc(100vh-3.5rem)]">
+      <DragDropContext onDragEnd={handleDragEnd}>
+        <div className="p-6 space-y-5">
+          {/* Header (Hub-specific) */}
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => router.push('/')}
+                aria-label="Back to All Clients"
+                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
               >
-                <div className={`flex items-center justify-between px-4 py-3 ${stage.header}`}>
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+              {client && (
+                <div
+                  className="h-9 w-9 rounded-xl flex items-center justify-center text-white font-bold text-sm flex-shrink-0 overflow-hidden"
+                  style={{ backgroundColor: client.color }}
+                >
+                  {client.logo_url
+                    // eslint-disable-next-line @next/next/no-img-element
+                    ? <img src={client.logo_url} alt="" className="h-full w-full object-contain p-1 brightness-0 invert" />
+                    : client?.name.slice(0, 2).toUpperCase()
+                  }
+                </div>
+              )}
+              <div className="min-w-0">
+                <h1 className="text-xl font-bold text-gray-900 truncate">{client?.name ?? 'Creative Requests'}</h1>
+                <p className="text-sm text-gray-400 mt-0.5">Track and review all creative work</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {client && (
+                <a
+                  href={portalUrl} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Client portal
+                </a>
+              )}
+              <button
+                onClick={() => setShowBriefModal(true)}
+                className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+                style={{ backgroundColor: clientColor }}
+              >
+                <Plus className="h-4 w-4" />
+                Create Brief
+              </button>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="grid grid-cols-3 gap-5">
+              {[1,2,3].map(n => <div key={n} className="h-96 rounded-2xl bg-gray-200 animate-pulse" />)}
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-5 items-start">
+
+              {/* Backlog */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
                   <div className="flex items-center gap-2">
-                    <span className={`text-xs font-semibold uppercase tracking-wide ${stage.text}`}>{stage.label}</span>
-                    <span className={`text-xs font-bold rounded-full px-1.5 py-0.5 bg-white/60 ${stage.text}`}>
-                      {stageBriefs.length}
+                    <span className="h-2 w-2 rounded-full bg-amber-400 flex-shrink-0" />
+                    <h3 className="text-sm font-semibold text-gray-800">Backlog</h3>
+                    <span className="text-[11px] font-medium text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">
+                      {backlogOrder.length}
                     </span>
                   </div>
+                  <button
+                    onClick={() => setShowBriefModal(true)}
+                    className="h-7 w-7 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 transition-colors"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                  {stageBriefs.map(brief => (
-                    <BriefCard
-                      key={brief.id}
-                      brief={brief}
-                      stageKey={stage.key}
-                      clientColor={client.color}
-                      onClick={() => setSelectedBrief(brief)}
-                      onMove={moveToStage}
-                    />
-                  ))}
-                  {stageBriefs.length === 0 && (
-                    <div className="flex items-center justify-center h-16 rounded-xl border-2 border-dashed border-zinc-200">
-                      <p className="text-xs text-zinc-400">Empty</p>
+                <Droppable droppableId="backlog">
+                  {(provided) => (
+                    <div
+                      ref={provided.innerRef}
+                      {...provided.droppableProps}
+                      className="p-3 space-y-3 min-h-[300px]"
+                    >
+                      {backlogOrder.map((brief, index) => (
+                        <Draggable key={brief.id} draggableId={brief.id} index={index}>
+                          {(provided, snapshot) => (
+                            <div
+                              ref={provided.innerRef}
+                              {...provided.draggableProps}
+                              style={provided.draggableProps.style}
+                            >
+                              <BriefCard
+                                brief={brief}
+                                clientColor={clientColor}
+                                dragHandleProps={provided.dragHandleProps}
+                                isDragging={snapshot.isDragging}
+                                isUpNext={index === 0}
+                                onOpen={() => !snapshot.isDragging && setSelectedBrief(brief)}
+                                onApprove={() => handleApprove(brief.id)}
+                                onRequestRevisions={() => handleRequestRevisions(brief.id)}
+                                onCoverUpload={(file) => handleCoverUpload(brief.id, file)}
+                                onCoverDelete={() => handleCoverDelete(brief.id)}
+                              />
+                            </div>
+                          )}
+                        </Draggable>
+                      ))}
+                      {provided.placeholder}
+                      {backlogOrder.length === 0 && (
+                        <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50/50 py-12 text-center">
+                          <p className="text-xs text-gray-400">No briefs in backlog</p>
+                        </div>
+                      )}
                     </div>
+                  )}
+                </Droppable>
+              </div>
+
+              {/* In Production */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-blue-400 flex-shrink-0" />
+                    <h3 className="text-sm font-semibold text-gray-800">In Production</h3>
+                    <span className="text-[11px] font-medium text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">
+                      {inProduction.length}
+                    </span>
+                  </div>
+                  <div className="h-7 w-7" />
+                </div>
+                <Droppable droppableId="in-production">
+                  {(provided) => (
+                    <div
+                      ref={provided.innerRef}
+                      {...provided.droppableProps}
+                      className="p-3 space-y-3 min-h-[300px]"
+                    >
+                      {inProduction.map((brief, index) => (
+                        <Draggable key={brief.id} draggableId={brief.id} index={index}>
+                          {(provided, snapshot) => (
+                            <div
+                              ref={provided.innerRef}
+                              {...provided.draggableProps}
+                              style={provided.draggableProps.style}
+                            >
+                              <BriefCard
+                                brief={brief}
+                                clientColor={clientColor}
+                                reviewMode
+                                dragHandleProps={provided.dragHandleProps}
+                                isDragging={snapshot.isDragging}
+                                onOpen={() => !snapshot.isDragging && setSelectedBrief(brief)}
+                                onApprove={() => handleApprove(brief.id)}
+                                onRequestRevisions={() => handleRequestRevisions(brief.id)}
+                                onCoverUpload={(file) => handleCoverUpload(brief.id, file)}
+                                onCoverDelete={() => handleCoverDelete(brief.id)}
+                              />
+                            </div>
+                          )}
+                        </Draggable>
+                      ))}
+                      {provided.placeholder}
+                      {inProduction.length === 0 && (
+                        <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50/50 py-12 text-center">
+                          <p className="text-xs text-gray-400">Nothing in production yet</p>
+                          <p className="text-[11px] text-gray-300 mt-1">Drag a brief here or approve one</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </Droppable>
+              </div>
+
+              {/* Approved */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 flex-shrink-0" />
+                    <h3 className="text-sm font-semibold text-gray-800">Approved</h3>
+                    <span className="text-[11px] font-medium text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">
+                      {allApproved.length}
+                    </span>
+                  </div>
+                  <div className="h-7 w-7" />
+                </div>
+                <div className="p-3 space-y-3 min-h-[300px]">
+                  {approvedCards.map(brief => (
+                    <ApprovedBriefCard key={brief.id} brief={brief} clientColor={clientColor} />
+                  ))}
+                  {allApproved.length === 0 && (
+                    <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50/50 py-12 text-center">
+                      <p className="text-xs text-gray-400">No approved briefs yet</p>
+                    </div>
+                  )}
+                  {allApproved.length > 10 && (
+                    <button
+                      onClick={() => setShowAllApproved(v => !v)}
+                      className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white py-2.5 text-xs font-medium text-gray-500 hover:bg-gray-50 transition-colors"
+                    >
+                      <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showAllApproved ? 'rotate-180' : ''}`} />
+                      {showAllApproved ? 'Show less' : `See all ${allApproved.length} approved`}
+                    </button>
                   )}
                 </div>
               </div>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* Brief detail drawer */}
-      {selectedBrief && (
-        <BriefDrawer
-          brief={selectedBrief}
-          clientColor={client.color}
-          clientName={client.name}
-          internalMode
-          onClose={() => setSelectedBrief(null)}
-          onMove={moveToStage}
-          onInternalMove={moveInternalStage}
-          onRefresh={load}
-          onBriefUpdate={(updates) => {
-            setBriefs(prev => prev.map(b => b.id === selectedBrief.id ? { ...b, ...updates } : b))
-            setSelectedBrief(prev => prev ? { ...prev, ...updates } : null)
-          }}
-        />
-      )}
-
-      {/* New Brief modal */}
-      {showNewBrief && client && (
-        <CreateBriefModal
-          clientId={client.id}
-          clientColor={client.color}
-          clientName={client.name}
-          onClose={() => setShowNewBrief(false)}
-          onCreated={() => { setShowNewBrief(false); load() }}
-        />
-      )}
-    </div>
-  )
-}
-
-// ─── Brief Card ───────────────────────────────────────────────────────────────
-
-function BriefCard({ brief, stageKey, clientColor, onClick, onMove }: {
-  brief: Brief
-  stageKey: string
-  clientColor: string
-  onClick: () => void
-  onMove: (id: string, stage: string) => void
-}) {
-  const stageKeys    = STAGES.map(s => s.key)
-  const currentIndex = stageKeys.indexOf(stageKey)
-  const nextStage    = currentIndex < stageKeys.length - 1 ? stageKeys[currentIndex + 1] : null
-  const nextLabel    = nextStage ? STAGES[currentIndex + 1].label : null
-  const isRevisions  = brief.internal_status === 'revisions_required'
-  const hasDraft     = !!brief.draft_url
-  const typeInfo     = CONTENT_TYPES.find(t => t.id === brief.content_type)
-
-  return (
-    <div
-      onClick={onClick}
-      className="rounded-2xl bg-white border border-gray-100 shadow-sm hover:shadow-md p-4 cursor-pointer transition-all"
-    >
-      {/* Attribution row */}
-      {(brief.creator || (brief.tagged_users?.length ?? 0) > 0) && (
-        <div className="flex items-center mb-2" onClick={e => e.stopPropagation()}>
-          {brief.creator && (
-            <UserAvatar user={brief.creator} size={24} tint={clientColor} />
-          )}
-          {(brief.tagged_users?.length ?? 0) > 0 && (
-            <div className={brief.creator ? '-ml-2' : ''}>
-              <StackedAvatars users={brief.tagged_users ?? []} tint={clientColor} size={22} />
             </div>
           )}
+
+          {/* Brief detail panel */}
+          {selectedBrief && client && (
+            <BriefPanel
+              brief={selectedBrief}
+              clientColor={clientColor}
+              showInternalNotesTab
+              hubStaff={hubStaff}
+              onAssignDesigner={handleAssignDesigner}
+              onClose={() => setSelectedBrief(null)}
+              onApprove={() => handleApprove(selectedBrief.id)}
+              onRequestRevisions={() => handleRequestRevisions(selectedBrief.id)}
+              onCoverUpload={(file) => handleCoverUpload(selectedBrief.id, file)}
+              onCoverDelete={() => handleCoverDelete(selectedBrief.id)}
+              onDelete={() => handleDeleteBrief(selectedBrief.id)}
+              onReload={() => load(true)}
+            />
+          )}
+
+          {/* Create brief */}
+          {showBriefModal && client && (
+            <CreateBriefModal
+              clientId={client.id}
+              clientColor={clientColor}
+              onClose={() => setShowBriefModal(false)}
+              onCreated={() => { setShowBriefModal(false); load(true) }}
+            />
+          )}
+        </div>
+      </DragDropContext>
+
+      {/* Page-level loading overlay — kept outside DnD to avoid layout shift */}
+      {loading === false && !client && (
+        <div className="flex items-center justify-center py-20">
+          <div className="flex items-center gap-2 text-gray-400">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-sm">Client not found</span>
+          </div>
         </div>
       )}
-
-      {/* Thumbnail / Cover */}
-      <div className="relative h-28 rounded-xl mb-3 overflow-hidden">
-        {brief.cover_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={brief.cover_url} alt="" className="h-full w-full object-cover" />
-        ) : (
-          <div
-            className="h-full w-full flex items-center justify-center"
-            style={{ background: `linear-gradient(135deg, ${typeInfo?.color ?? '#6366f1'}22 0%, ${typeInfo?.color ?? '#6366f1'}44 100%)` }}
-          >
-            {typeInfo ? (
-              <typeInfo.icon className="h-10 w-10 opacity-30" style={{ color: typeInfo.color }} />
-            ) : (
-              <div className="h-10 w-10 rounded-full bg-gray-200 opacity-50" />
-            )}
-          </div>
-        )}
-
-        {brief.campaign && (
-          <div className="absolute top-2 right-2 rounded-lg bg-black/60 backdrop-blur-sm px-2 py-1 max-w-[130px]">
-            <p className="text-[10px] font-semibold text-white truncate">{brief.campaign}</p>
-          </div>
-        )}
-      </div>
-
-      {/* Content type chip */}
-      {typeInfo && (
-        <span
-          className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold mb-2"
-          style={{ backgroundColor: `${typeInfo.color}18`, color: typeInfo.color }}
-        >
-          {typeInfo.id}
-        </span>
-      )}
-
-      {/* Title */}
-      <p className="text-sm font-semibold text-gray-800 leading-snug">{brief.name}</p>
-
-      {/* Status badges */}
-      <div className="flex gap-1.5 flex-wrap mt-2 mb-3">
-        {isRevisions && (
-          <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-red-50 text-red-500 border border-red-100">
-            Revisions requested
-          </span>
-        )}
-        {hasDraft && !isRevisions && (
-          <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-emerald-50 text-emerald-600 border border-emerald-100">
-            Draft ready
-          </span>
-        )}
-        {brief.due_date && (
-          <span className="rounded-full px-2 py-0.5 text-[10px] font-medium bg-gray-50 text-gray-400 border border-gray-100">
-            Due {format(new Date(brief.due_date), 'd MMM')}
-          </span>
-        )}
-      </div>
-
-      {/* Open Brief button */}
-      <button
-        type="button"
-        onClick={e => { e.stopPropagation(); onClick() }}
-        className="mb-2 w-full flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90"
-        style={{ backgroundColor: clientColor }}
-      >
-        <ExternalLink className="h-3 w-3" />
-        Open Brief
-      </button>
-
-      {/* Action row — View Draft + Move to next stage */}
-      <div className="flex gap-2" onClick={e => e.stopPropagation()}>
-        {hasDraft ? (
-          <a
-            href={brief.draft_url!}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
-          >
-            <Play className="h-3 w-3" />
-            View Draft
-          </a>
-        ) : (
-          <button
-            disabled
-            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-gray-100 py-2 text-xs font-medium text-gray-300 cursor-not-allowed"
-          >
-            <Play className="h-3 w-3" />
-            View Draft
-          </button>
-        )}
-
-        {nextStage && (
-          <button
-            onClick={e => { e.stopPropagation(); onMove(brief.id, nextStage) }}
-            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ backgroundColor: clientColor }}
-          >
-            {nextLabel} →
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ─── Create Brief Modal ───────────────────────────────────────────────────────
-
-function CreateBriefModal({ clientId, clientColor, clientName, onClose, onCreated }: {
-  clientId: string
-  clientColor: string
-  clientName: string
-  onClose: () => void
-  onCreated: () => void
-}) {
-  const [name, setName]               = useState('')
-  const [description, setDesc]        = useState('')
-  const [campaign, setCampaign]       = useState('')
-  const [contentType, setContentType] = useState('')
-  const [dueDate, setDueDate]         = useState('')
-  const [saving, setSaving]           = useState(false)
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!name.trim()) return
-    setSaving(true)
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('briefs').insert({
-      name:            name.trim(),
-      description:     description.trim() || null,
-      campaign:        campaign.trim() || null,
-      content_type:    contentType || null,
-      due_date:        dueDate || null,
-      client_id:       clientId,
-      pipeline_status: 'backlog',
-      internal_status: 'in_production',
-      created_by:      user?.id ?? null,
-    })
-    setSaving(false)
-    onCreated()
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h2 className="font-bold text-zinc-900">New Brief</h2>
-            <p className="text-xs text-zinc-400 mt-0.5">{clientName}</p>
-          </div>
-          <button onClick={onClose} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-1.5">Brief Name *</label>
-            <input
-              type="text"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              required
-              autoFocus
-              placeholder="e.g. Summer Sale Banner"
-              className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#14C29F]/30 focus:border-[#14C29F]"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-1.5">Campaign</label>
-              <input
-                type="text"
-                value={campaign}
-                onChange={e => setCampaign(e.target.value)}
-                placeholder="e.g. Summer 2025"
-                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#14C29F]/30"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-1.5">Due Date</label>
-              <input
-                type="date"
-                value={dueDate}
-                onChange={e => setDueDate(e.target.value)}
-                className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#14C29F]/30"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-1.5">Content Type</label>
-            <div className="flex gap-2 flex-wrap">
-              {CONTENT_TYPES.map(t => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setContentType(contentType === t.id ? '' : t.id)}
-                  className={`rounded-full px-3 py-1 text-xs font-medium border transition-all ${
-                    contentType === t.id
-                      ? 'text-white border-transparent bg-zinc-900'
-                      : 'bg-white border-zinc-200 text-zinc-600 hover:border-zinc-300'
-                  }`}
-                >
-                  {t.id}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide block mb-1.5">Brief Details</label>
-            <textarea
-              value={description}
-              onChange={e => setDesc(e.target.value)}
-              rows={3}
-              placeholder="Describe what's needed, references, requirements…"
-              className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#14C29F]/30 resize-none"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={saving || !name.trim()}
-            className="w-full rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-50 transition-opacity hover:opacity-90"
-            style={{ backgroundColor: clientColor }}
-          >
-            {saving ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'Create Brief'}
-          </button>
-        </form>
-      </div>
     </div>
   )
 }

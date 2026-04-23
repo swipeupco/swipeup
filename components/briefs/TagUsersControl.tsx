@@ -1,5 +1,9 @@
 'use client'
 
+// Ported verbatim from the SwipeUp Portal
+// (src/components/briefs/TagUsersControl.tsx). Keep visual + behavioural
+// parity with the Portal so the Hub's brief drawer matches the client's.
+
 import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, X, Check } from 'lucide-react'
