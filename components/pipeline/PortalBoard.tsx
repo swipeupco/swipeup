@@ -95,6 +95,17 @@ function initialsOf(name: string | null | undefined) {
     : parts[0].slice(0, 2).toUpperCase()
 }
 
+/** Spread this on any interactive element inside a BriefCard so pressing it
+ *  doesn't start a drag. @hello-pangea/dnd installs its sensor on the drag
+ *  handle's mousedown / touchstart / pointerdown — stopping propagation on
+ *  each of those three blocks drag initiation in every browser while leaving
+ *  the element's own onClick / href behaviour untouched. */
+const STOP_DRAG = {
+  onMouseDown:   (e: React.MouseEvent)   => { e.stopPropagation() },
+  onTouchStart:  (e: React.TouchEvent)   => { e.stopPropagation() },
+  onPointerDown: (e: React.PointerEvent) => { e.stopPropagation() },
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Avatar primitives (copied from Portal)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -229,8 +240,18 @@ export function BriefCard({
   }
 
   return (
+    // The entire card surface is the drag handle — spread dragHandleProps
+    // here so a press-and-hold anywhere on the card starts a drag. Clicks
+    // without meaningful movement fall through to onClick and open the
+    // drawer (@hello-pangea/dnd's click-vs-drag detection handles the
+    // threshold automatically). Interactive children inside the card block
+    // drag initiation via {...STOP_DRAG}.
     <div
-      className={`rounded-2xl bg-white p-4 cursor-pointer transition-all ${isDragging ? 'rotate-1 scale-105' : 'border border-gray-100 shadow-sm hover:shadow-md'}`}
+      {...(dragHandleProps ?? {})}
+      className={`rounded-2xl bg-white p-4 transition-all ${isDragging
+        ? 'rotate-1 scale-105 cursor-grabbing'
+        : 'border border-gray-100 shadow-sm hover:shadow-md cursor-grab active:cursor-grabbing'
+      }`}
       style={isDragging ? {
         boxShadow: `0 0 0 2px ${clientColor}, 0 20px 40px ${clientColor}55, 0 8px 24px rgba(0,0,0,0.15)`,
       } : {}}
@@ -253,9 +274,10 @@ export function BriefCard({
         </div>
       )}
 
-      {/* Attribution + drag handle row */}
+      {/* Attribution + grip icon row (grip is now purely decorative —
+          the whole card body is the drag handle) */}
       <div className="flex items-center justify-between mb-1.5">
-        <div className="flex items-center" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center">
           {brief.creator && (
             <UserAvatar user={brief.creator} size={24} tint={clientColor} />
           )}
@@ -266,13 +288,8 @@ export function BriefCard({
           )}
         </div>
         {dragHandleProps && (
-          <div onClick={e => e.stopPropagation()}>
-            <div
-              {...dragHandleProps}
-              className="cursor-grab active:cursor-grabbing p-1 rounded-lg text-gray-200 hover:text-gray-400 transition-colors"
-            >
-              <GripVertical className="h-4 w-4" />
-            </div>
+          <div className="p-1 rounded-lg text-gray-200" aria-hidden>
+            <GripVertical className="h-4 w-4" />
           </div>
         )}
       </div>
@@ -280,7 +297,6 @@ export function BriefCard({
       {/* Thumbnail / Cover */}
       <div
         className="relative h-28 rounded-xl mb-3 overflow-hidden"
-        onClick={e => e.stopPropagation()}
         onMouseEnter={() => setCoverHover(true)}
         onMouseLeave={() => setCoverHover(false)}
       >
@@ -312,6 +328,7 @@ export function BriefCard({
             type="file"
             accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
             className="hidden"
+            {...STOP_DRAG}
             onChange={e => {
               setCoverMenuOpen(false)
               const file = e.target.files?.[0] ?? null
@@ -331,9 +348,11 @@ export function BriefCard({
           <div
             className="absolute bottom-2 right-2"
             ref={coverMenuRef}
+            {...STOP_DRAG}
             onClick={e => e.stopPropagation()}
           >
             <button
+              type="button"
               className="rounded-lg bg-black/70 px-2 py-1 flex items-center gap-1 hover:bg-black/85 transition-colors"
               onClick={() => setCoverMenuOpen(v => !v)}
             >
@@ -345,6 +364,7 @@ export function BriefCard({
             {coverMenuOpen && (
               <div className="absolute bottom-full mb-1 right-0 w-44 rounded-xl bg-white border border-zinc-200 shadow-xl overflow-hidden z-20">
                 <button
+                  type="button"
                   className="flex items-center gap-2 w-full px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 transition-colors"
                   onClick={() => fileInputRef.current?.click()}
                 >
@@ -353,6 +373,7 @@ export function BriefCard({
                 </button>
                 {brief.cover_url && onCoverDelete && (
                   <button
+                    type="button"
                     className="flex items-center gap-2 w-full px-3 py-2 text-xs text-red-500 hover:bg-red-50 transition-colors"
                     onClick={() => { setCoverMenuOpen(false); onCoverDelete() }}
                   >
@@ -417,8 +438,9 @@ export function BriefCard({
       {/* Open Brief button */}
       <button
         type="button"
+        {...STOP_DRAG}
         onClick={e => { e.stopPropagation(); onOpen() }}
-        className="mb-2 w-full flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+        className="mb-2 w-full flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold text-white cursor-pointer transition-opacity hover:opacity-90"
         style={{ backgroundColor: clientColor }}
       >
         <ExternalLink className="h-3 w-3" />
@@ -426,19 +448,20 @@ export function BriefCard({
       </button>
 
       {/* Action buttons */}
-      <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+      <div className="flex gap-2" {...STOP_DRAG} onClick={e => e.stopPropagation()}>
         {hasDraft ? (
           <a
             href={brief.draft_url!}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 py-2 text-xs font-semibold text-gray-600 cursor-pointer hover:bg-gray-50 transition-colors"
           >
             <Play className="h-3 w-3" />
             View Draft
           </a>
         ) : (
           <button
+            type="button"
             disabled
             className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-gray-100 py-2 text-xs font-medium text-gray-300 cursor-not-allowed"
           >
@@ -449,11 +472,12 @@ export function BriefCard({
 
         {onApprove && (
           <button
+            type="button"
             onClick={approve}
             disabled={approving || !reviewMode || !hasDraft}
             className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold transition-colors ${
               reviewMode && hasDraft
-                ? 'bg-emerald-500 text-white hover:bg-emerald-600'
+                ? 'bg-emerald-500 text-white hover:bg-emerald-600 cursor-pointer'
                 : 'bg-gray-50 text-gray-300 border border-gray-100 cursor-not-allowed'
             }`}
           >
@@ -465,9 +489,11 @@ export function BriefCard({
 
       {reviewMode && hasDraft && !isRevisions && onRequestRevisions && (
         <button
+          type="button"
+          {...STOP_DRAG}
           onClick={e => { e.stopPropagation(); requestRevisions() }}
           disabled={revisioning}
-          className="mt-2 w-full flex items-center justify-center gap-1.5 rounded-xl border border-red-100 py-2 text-xs font-semibold text-red-500 hover:bg-red-50 transition-colors"
+          className="mt-2 w-full flex items-center justify-center gap-1.5 rounded-xl border border-red-100 py-2 text-xs font-semibold text-red-500 cursor-pointer hover:bg-red-50 transition-colors"
         >
           {revisioning ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
           Request Revisions
