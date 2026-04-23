@@ -321,8 +321,9 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
   const portalUrl = client ? `https://${client.slug}.${ROOT_DOMAIN}` : '#'
 
   return (
-    // Isolate the Portal's light visual context from the Hub's dark shell.
-    <div className="bg-[#F7F8FA] text-gray-900 min-h-[calc(100vh-3.5rem)]">
+    // pipeline-bg: radial brand-violet glow from bottom-left on a near-black
+    // base in dark mode; subtle same-recipe variant in light. See app/globals.css.
+    <div className="pipeline-bg min-h-[calc(100vh-3.5rem)] text-gray-900 dark:text-white">
       <DragDropContext onDragEnd={handleDragEnd}>
         <div className="p-6 space-y-5">
           {/* Header (Hub-specific) */}
@@ -331,7 +332,7 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
               <button
                 onClick={() => router.push('/')}
                 aria-label="Back to All Clients"
-                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-700 dark:hover:text-white transition-colors"
               >
                 <ArrowLeft className="h-5 w-5" />
               </button>
@@ -348,7 +349,7 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
                 </div>
               )}
               <div className="min-w-0">
-                <h1 className="text-xl font-bold text-gray-900 truncate">{client?.name ?? 'Creative Requests'}</h1>
+                <h1 className="text-xl font-bold text-gray-900 dark:text-white truncate">{client?.name ?? 'Creative Requests'}</h1>
                 <p className="text-sm text-gray-400 mt-0.5">Track and review all creative work</p>
               </div>
             </div>
@@ -356,7 +357,7 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
               {client && (
                 <a
                   href={portalUrl} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition-colors"
+                  className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-white/10 dark:hover:text-white transition-colors"
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
                   Client portal

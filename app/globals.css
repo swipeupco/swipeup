@@ -107,3 +107,21 @@ body {
 }
 .animate-bell-pulse { animation: bellPulse 600ms ease-out 2; }
 .animate-bell-in    { animation: bellIn 180ms ease-out; }
+
+/* ── Pipeline pages background ─────────────────────────────────────────────
+   Applied to the page-level wrapper on /pipeline and /pipeline/[clientSlug].
+   Matches the Hub's login page: deep near-black base with a soft brand-violet
+   glow radiating from the bottom-left corner. Light mode keeps a subtle
+   version of the same glow on a pale off-white base so the two themes feel
+   related. Kept out of the pipeline page files themselves so both boards
+   share one definition. */
+.pipeline-bg {
+  background:
+    radial-gradient(ellipse 900px 600px at 0% 100%, rgba(73, 80, 248, 0.06), transparent 55%),
+    #F7F8FA;
+}
+.dark .pipeline-bg {
+  background:
+    radial-gradient(ellipse 1200px 800px at 0% 100%, rgba(73, 80, 248, 0.22), transparent 55%),
+    #0B1220;
+}
