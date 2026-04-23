@@ -32,6 +32,7 @@ import { DraggableProvidedDragHandleProps } from '@hello-pangea/dnd'
 import { createClient } from '@/lib/supabase/client'
 import { format } from 'date-fns'
 import TagUsersControl from '@/components/briefs/TagUsersControl'
+import BriefAttachments from '@/components/briefs/BriefAttachments'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types + constants
@@ -1205,6 +1206,13 @@ export function BriefPanel({
                   })}
                 </div>
               </div>
+
+              {/* Files — uploads, previews, cover selection. The first
+                  upload auto-marks as cover; later clicks on the star
+                  flip it. Cover attachment dual-writes briefs.cover_url
+                  so BriefCard's existing cover_url path works across the
+                  Hub and the Portal. */}
+              <BriefAttachments briefId={brief.id} clientColor={clientColor} />
 
               {onDelete && (
                 <div className="pt-2 border-t border-gray-100">

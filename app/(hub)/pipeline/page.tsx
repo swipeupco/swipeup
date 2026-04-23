@@ -338,6 +338,11 @@ export default function InternalPipeline() {
                       </div>
                       <div className="h-7 w-7" />
                     </div>
+                    {col.key === 'approved' && (
+                      <p className="px-4 pt-3 text-[11px] text-gray-400 dark:text-zinc-500">
+                        Approved briefs auto-delete after 90 days
+                      </p>
+                    )}
                     <Droppable droppableId={col.key}>
                       {(provided, snapshot) => (
                         <div

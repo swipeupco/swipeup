@@ -510,6 +510,9 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
                   </div>
                   <div className="h-7 w-7" />
                 </div>
+                <p className="px-4 pt-3 text-[11px] text-gray-400 dark:text-zinc-500">
+                  Approved briefs auto-delete after 90 days
+                </p>
                 <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-[200px]">
                   {approvedCards.map(brief => (
                     <ApprovedBriefCard key={brief.id} brief={brief} clientColor={clientColor} />
