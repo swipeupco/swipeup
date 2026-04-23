@@ -248,15 +248,24 @@ export function BriefCard({
     // drag initiation via {...STOP_DRAG}.
     <div
       {...(dragHandleProps ?? {})}
-      className={`rounded-2xl bg-white dark:bg-[#161B26] p-4 transition-all ${isDragging
+      className={`relative overflow-hidden rounded-2xl bg-white dark:bg-[#161B26] p-4 transition-all ${isDragging
         ? 'rotate-1 scale-105 cursor-grabbing'
         : 'border border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none hover:shadow-md dark:hover:border-white/[0.14] cursor-grab active:cursor-grabbing'
       }`}
       style={isDragging ? {
-        boxShadow: `0 0 0 2px ${clientColor}, 0 20px 40px ${clientColor}55, 0 8px 24px rgba(0,0,0,0.15)`,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.45)',
       } : {}}
       onClick={onOpen}
     >
+      {/* Client colour stripe (3px, left edge) — accents the card with its
+          client's brand colour in both the per-client and master pipeline
+          views. Sits inside the rounded-2xl + overflow-hidden wrapper so it
+          follows the corner shape. */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-0 top-0 bottom-0 w-[3px]"
+        style={{ backgroundColor: clientColor }}
+      />
       {/* Hub-only: client logo + name at top (master pipeline only) */}
       {showClientChip && (brief.client_name || brief.client_color) && (
         <div className="flex items-center gap-1.5 mb-2 pb-2 border-b border-gray-50 dark:border-white/[0.06]">
@@ -393,15 +402,16 @@ export function BriefCard({
         )}
       </div>
 
-      {/* Content type badge — brand colour, lower background opacity on dark so
-          it doesn't glare against the dark canvas. */}
+      {/* Content type chip — brand colour outline, quiet fill (~8% on light,
+          ~4% on dark) so it reads as an accent rather than a filled pill. */}
       {typeInfo && (
         <span
-          className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold mb-2 [background-color:var(--chip-bg-light)] dark:[background-color:var(--chip-bg-dark)]"
+          className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold mb-2 border [background-color:var(--chip-bg-light)] dark:[background-color:var(--chip-bg-dark)]"
           style={{
-            ['--chip-bg-light' as string]: `${typeInfo.color}18`,
-            ['--chip-bg-dark'  as string]: `${typeInfo.color}10`,
+            ['--chip-bg-light' as string]: `${typeInfo.color}14`,
+            ['--chip-bg-dark'  as string]: `${typeInfo.color}0A`,
             color: typeInfo.color,
+            borderColor: `${typeInfo.color}55`,
           } as React.CSSProperties}
         >
           {typeInfo.id}
@@ -425,7 +435,7 @@ export function BriefCard({
         )}
         {!hasDraft && !reviewMode && (
           isUpNext ? (
-            <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold border" style={{ backgroundColor: `${clientColor}15`, color: clientColor, borderColor: `${clientColor}40` }}>
+            <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-gray-50 dark:bg-white/5 text-gray-500 dark:text-zinc-300 border border-gray-200 dark:border-white/10">
               ⬆ Up next
             </span>
           ) : (
@@ -446,13 +456,14 @@ export function BriefCard({
         )}
       </div>
 
-      {/* Open Brief button */}
+      {/* Open Brief button — Hub brand violet (#4950F8) with ~8% lighter on
+          hover. Deliberately NOT the client's brand colour — this is a Hub
+          action, not a client-themed button. */}
       <button
         type="button"
         {...STOP_DRAG}
         onClick={e => { e.stopPropagation(); onOpen() }}
-        className="mb-2 w-full flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold text-white cursor-pointer transition-opacity hover:opacity-90"
-        style={{ backgroundColor: clientColor }}
+        className="mb-2 w-full flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold text-white cursor-pointer transition-colors bg-[#4950F8] hover:bg-[#5d64ff]"
       >
         <ExternalLink className="h-3 w-3" />
         Open Brief
@@ -530,7 +541,14 @@ export function BriefCard({
 export function ApprovedBriefCard({ brief, showClientChip = false }: { brief: Brief; clientColor?: string; showClientChip?: boolean }) {
   const typeInfo = CONTENT_TYPES.find(t => t.id === brief.content_type)
   return (
-    <div className="rounded-2xl bg-white dark:bg-[#161B26] border border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none p-4">
+    <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#161B26] border border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none p-4">
+      {/* Client colour stripe — matches BriefCard so both card variants
+          share the same brand accent. */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-0 top-0 bottom-0 w-[3px]"
+        style={{ backgroundColor: brief.client_color ?? '#4950F8' }}
+      />
       {showClientChip && brief.client_name && (
         <div className="flex items-center gap-1.5 mb-2 pb-2 border-b border-gray-50 dark:border-white/[0.06]">
           <div

@@ -402,11 +402,11 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
                 </div>
 
                 <Droppable droppableId="backlog">
-                  {(provided) => (
+                  {(provided, snapshot) => (
                     <div
                       ref={provided.innerRef}
                       {...provided.droppableProps}
-                      className="flex-1 overflow-y-auto p-3 space-y-3 min-h-[200px]"
+                      className={`flex-1 overflow-y-auto p-3 space-y-3 min-h-[200px] transition-colors ${snapshot.isDraggingOver ? 'bg-gray-100/60 dark:bg-white/[0.04] ring-1 ring-inset ring-gray-200 dark:ring-white/[0.08]' : ''}`}
                     >
                       {backlogOrder.map((brief, index) => (
                         <Draggable key={brief.id} draggableId={brief.id} index={index}>
@@ -456,11 +456,11 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
                   <div className="h-7 w-7" />
                 </div>
                 <Droppable droppableId="in-production">
-                  {(provided) => (
+                  {(provided, snapshot) => (
                     <div
                       ref={provided.innerRef}
                       {...provided.droppableProps}
-                      className="flex-1 overflow-y-auto p-3 space-y-3 min-h-[200px]"
+                      className={`flex-1 overflow-y-auto p-3 space-y-3 min-h-[200px] transition-colors ${snapshot.isDraggingOver ? 'bg-gray-100/60 dark:bg-white/[0.04] ring-1 ring-inset ring-gray-200 dark:ring-white/[0.08]' : ''}`}
                     >
                       {inProduction.map((brief, index) => (
                         <Draggable key={brief.id} draggableId={brief.id} index={index}>
