@@ -309,19 +309,24 @@ export default function InternalPipeline() {
           <FilterChip active={awaitingClient} onClick={() => setAwaitingClient(v => !v)} icon={<Clock className="h-3.5 w-3.5" />} label="Awaiting client review" count={awaitingCount} />
         </div>
 
-        {/* Board */}
+        {/* Board — Trello-style: fixed-width columns (272px each), horizontal
+            scroll on the board container when columns overflow, vertical scroll
+            inside each column when its card list overflows. */}
         {loading ? (
-          <div className="grid grid-cols-4 gap-4">
-            {[1,2,3,4].map(n => <div key={n} className="h-96 rounded-2xl bg-gray-200 animate-pulse" />)}
+          <div className="flex gap-3 overflow-x-auto pb-2">
+            {[1,2,3,4].map(n => <div key={n} className="flex-shrink-0 w-[272px] h-96 rounded-2xl bg-gray-200 animate-pulse" />)}
           </div>
         ) : (
           <DragDropContext onDragEnd={onDragEnd}>
-            <div className="grid grid-cols-4 gap-4 items-start">
+            <div className="flex gap-3 items-start overflow-x-auto pb-2">
               {COLUMNS.map(col => {
                 const colBriefs = byColumn[col.key] ?? []
                 return (
-                  <div key={col.key} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
+                  <div
+                    key={col.key}
+                    className="flex-shrink-0 w-[272px] flex flex-col max-h-[calc(100vh-14rem)] bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
+                  >
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50 flex-shrink-0">
                       <div className="flex items-center gap-2">
                         <span className={`h-2 w-2 rounded-full flex-shrink-0 ${col.dot}`} />
                         <h3 className="text-sm font-semibold text-gray-800">{col.label}</h3>
@@ -336,7 +341,7 @@ export default function InternalPipeline() {
                         <div
                           ref={provided.innerRef}
                           {...provided.droppableProps}
-                          className={`p-3 space-y-3 min-h-[300px] transition-colors ${snapshot.isDraggingOver ? 'bg-violet-50/50' : ''}`}
+                          className={`flex-1 overflow-y-auto p-3 space-y-3 min-h-[200px] transition-colors ${snapshot.isDraggingOver ? 'bg-violet-50/50' : ''}`}
                         >
                           {colBriefs.map((brief, index) => (
                             <Draggable key={brief.id} draggableId={brief.id} index={index}>
