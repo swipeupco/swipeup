@@ -19,13 +19,15 @@ const ADMIN_ONLY = [
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl
 
-  // Public: auth page, auth callback, login, public assets, logo asset
+  // Public: auth pages, auth callback, login, reset-password, public assets
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/login') ||
+    pathname.startsWith('/reset-password') ||
     pathname.startsWith('/api/auth/') ||
     pathname.startsWith('/api/frameio-webhook') ||
     pathname === '/favicon.ico' ||
+    pathname === '/bg.png' ||
     pathname === '/SwipeUp_White.svg' ||
     pathname === '/swipeup-logo.png'
   ) {
