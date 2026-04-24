@@ -277,6 +277,27 @@ export default function InternalPipeline() {
     }
   }
 
+  async function handleRerun(briefId: string) {
+    // Creates a fresh backlog brief from an approved one. The copy strips
+    // per-run state (due_date, assigned_to, draft_url, cover) and relies on
+    // migration 007's auto-promote trigger to slot it in once a slot opens.
+    const source = briefs.find(b => b.id === briefId)
+    if (!source) return
+    const supabase = createClient()
+    await supabase.from('briefs').insert({
+      client_id:     source.client_id,
+      name:          `Re-run: ${source.name}`,
+      description:   source.description,
+      campaign:      source.campaign,
+      content_type:  source.content_type,
+      sizes:         source.sizes,
+      ref_url:       source.ref_url,
+      pipeline_status: 'backlog',
+      internal_status: 'in_production',
+    })
+    await load(true)
+  }
+
   async function handleCoverUpload(briefId: string, file: File | null) {
     if (!file) return
     const supabase = createClient()
@@ -419,6 +440,7 @@ export default function InternalPipeline() {
             hubStaff={hubStaff}
             onAssignDesigner={handleAssignDesigner}
             onPushToClient={() => handlePushToClient(selected.id)}
+            onRerun={() => handleRerun(selected.id)}
             onClose={() => setSelected(null)}
             onApprove={() => handleApprove(selected.id)}
             onRequestRevisions={() => handleRequestRevisions(selected.id)}

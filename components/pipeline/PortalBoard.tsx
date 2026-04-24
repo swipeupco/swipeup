@@ -27,6 +27,7 @@ import {
   MessageSquare, RotateCcw, Loader2, ChevronDown, Clock,
   Video, Image, Mail, LayoutGrid, Mic, FileText, CircleDot,
   GripVertical, Upload, Trash2, AtSign, Pencil, Check, Lock, User as UserIcon,
+  RefreshCw,
 } from 'lucide-react'
 import { DraggableProvidedDragHandleProps } from '@hello-pangea/dnd'
 import { createClient } from '@/lib/supabase/client'
@@ -610,6 +611,8 @@ export function BriefPanel({
   const coverFileRef = useRef<HTMLInputElement>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [rerunning, setRerunning] = useState(false)
+  const [rerunDone, setRerunDone] = useState(false)
   const [comments, setComments]             = useState<Comment[]>([])
   const [newComment, setNewComment]         = useState('')
   const [sending, setSending]               = useState(false)
@@ -1133,6 +1136,36 @@ export function BriefPanel({
                     className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-red-100 dark:border-red-400/30 py-2.5 text-xs font-semibold text-red-500 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
                   >
                     <RotateCcw className="h-3.5 w-3.5" /> Request Revisions
+                  </button>
+                )}
+                {/* Hub-only: Re-run approved brief.
+                    Creates a fresh backlog copy so production can spin the
+                    same creative up again without manually retyping it. */}
+                {showInternalNotesTab && isApproved && onRerun && (
+                  <button
+                    onClick={async () => {
+                      if (rerunning || rerunDone) return
+                      setRerunning(true)
+                      try {
+                        await onRerun()
+                        setRerunDone(true)
+                        setTimeout(() => setRerunDone(false), 2500)
+                      } finally {
+                        setRerunning(false)
+                      }
+                    }}
+                    disabled={rerunning}
+                    className={`w-full flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-semibold transition-colors disabled:opacity-60 ${
+                      rerunDone
+                        ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/40'
+                        : 'border border-gray-200 dark:border-white/15 text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-white/5'
+                    }`}
+                  >
+                    {rerunning
+                      ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Creating backlog copy…</>
+                      : rerunDone
+                        ? <><Check className="h-3.5 w-3.5" /> Added to Backlog</>
+                        : <><RefreshCw className="h-3.5 w-3.5" /> Re-run this brief</>}
                   </button>
                 )}
                 {/* Portal embeds (no showInternalNotesTab) keep the original

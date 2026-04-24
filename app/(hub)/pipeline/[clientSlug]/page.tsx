@@ -237,6 +237,28 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
     }
   }
 
+  async function handleRerun(briefId: string) {
+    // Re-run approved brief → inserts a new backlog brief with per-run
+    // state stripped (due_date, assigned_to, draft_url, cover, comments).
+    // Migration 007's auto-promote trigger will pull it into production
+    // once the client has capacity.
+    const source = briefs.find(b => b.id === briefId)
+    if (!source) return
+    const supabase = createClient()
+    await supabase.from('briefs').insert({
+      client_id:     source.client_id,
+      name:          `Re-run: ${source.name}`,
+      description:   source.description,
+      campaign:      source.campaign,
+      content_type:  source.content_type,
+      sizes:         source.sizes,
+      ref_url:       source.ref_url,
+      pipeline_status: 'backlog',
+      internal_status: 'in_production',
+    })
+    await load(true)
+  }
+
   async function handleDeleteBrief(briefId: string) {
     const supabase = createClient()
     await supabase.from('brief_comments').delete().eq('brief_id', briefId)
@@ -509,6 +531,7 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
               hubStaff={hubStaff}
               onAssignDesigner={handleAssignDesigner}
               onPushToClient={() => handlePushToClient(selectedBrief.id)}
+              onRerun={() => handleRerun(selectedBrief.id)}
               onClose={() => setSelectedBrief(null)}
               onApprove={() => handleApprove(selectedBrief.id)}
               onRequestRevisions={() => handleRequestRevisions(selectedBrief.id)}
