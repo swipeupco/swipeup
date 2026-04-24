@@ -7,7 +7,7 @@ import {
   ArrowRight, Loader2, Plus, X, Search, MoreHorizontal,
   CheckCircle2, Mail, Store, Truck, Palette, Upload, Copy, Check,
   UserPlus, Users, KeyRound, Trash2, ExternalLink, LogIn,
-  ShieldCheck, UserCog, AlertCircle,
+  ShieldCheck, UserCog, AlertCircle, Minus,
 } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -18,6 +18,9 @@ interface Client {
   slug: string
   color: string
   logo_url: string | null
+  /** Max number of briefs allowed in production at once. Added by
+   *  migration 006; pre-migration rows treat missing values as 1. */
+  in_production_limit?: number | null
 }
 
 interface BriefCounts {
@@ -64,6 +67,7 @@ export default function ClientsOverview() {
   const [loading, setLoading] = useState(true)
   const [query, setQuery]     = useState('')
   const [attentionOnly, setAttentionOnly] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   const [showNewClient, setShowNewClient] = useState(false)
   const [inviteTarget, setInviteTarget]   = useState<Client | null>(null)
@@ -80,11 +84,21 @@ export default function ClientsOverview() {
 
   async function load() {
     const supabase = createClient()
-    const { data: clientRows } = await supabase.from('clients').select('*').order('name')
+    const { data: { user } } = await supabase.auth.getUser()
+
+    const [{ data: clientRows }, { data: profile }, { data: briefs }] = await Promise.all([
+      supabase.from('clients').select('*').order('name'),
+      user
+        ? supabase.from('profiles').select('is_admin, hub_role').eq('id', user.id).single()
+        : Promise.resolve({ data: null }),
+      supabase.from('briefs').select('client_id, pipeline_status'),
+    ])
     if (!clientRows) { setLoading(false); return }
     setClients(clientRows)
 
-    const { data: briefs } = await supabase.from('briefs').select('client_id, pipeline_status')
+    const p = profile as { is_admin?: boolean; hub_role?: string | null } | null
+    setIsAdmin(p?.hub_role === 'admin' || p?.is_admin === true)
+
     const map: Record<string, BriefCounts> = {}
     clientRows.forEach(c => { map[c.id] = { backlog: 0, in_production: 0, approved: 0, awaiting_client_review: 0 } })
     briefs?.forEach(b => {
@@ -143,6 +157,15 @@ export default function ClientsOverview() {
 
   function handleBrandingUpdate(clientId: string, updates: Partial<Client>) {
     setClients(prev => prev.map(c => c.id === clientId ? { ...c, ...updates } : c))
+  }
+
+  async function handleLimitChange(clientId: string, newLimit: number) {
+    const clamped = Math.max(1, Math.min(10, newLimit))
+    const prev = clients
+    setClients(prev.map(c => c.id === clientId ? { ...c, in_production_limit: clamped } : c))
+    const supabase = createClient()
+    const { error } = await supabase.from('clients').update({ in_production_limit: clamped }).eq('id', clientId)
+    if (error) setClients(prev)
   }
 
   async function handleResetPassword(userId: string) {
@@ -259,6 +282,8 @@ export default function ClientsOverview() {
                 users={clientUsers[client.id] ?? []}
                 loadingUsers={loadingUsers === client.id}
                 staff={staff}
+                isAdmin={isAdmin}
+                onLimitChange={(newLimit) => handleLimitChange(client.id, newLimit)}
                 onOpenBoard={() => router.push(`/pipeline/${client.slug}`)}
                 onStageClick={(stageKey) => router.push(`/pipeline/${client.slug}?col=${stageKey}`)}
                 onOpenUsers={() => openUsers(client.id)}
@@ -309,6 +334,7 @@ export default function ClientsOverview() {
 
 function ClientRow({
   client, counts, expanded, users, loadingUsers, staff,
+  isAdmin, onLimitChange,
   onOpenBoard, onStageClick,
   onOpenUsers, onOpenBranding, onOpenAccess, onClose,
   onInviteUser, onInviteStaff, onBrandingUpdate,
@@ -320,6 +346,8 @@ function ClientRow({
   users: ClientUser[]
   loadingUsers: boolean
   staff: StaffMember[]
+  isAdmin: boolean
+  onLimitChange: (newLimit: number) => void
   onOpenBoard: () => void
   onStageClick: (key: 'backlog' | 'in_production' | 'approved') => void
   onOpenUsers: () => void
@@ -406,8 +434,14 @@ function ClientRow({
           })}
         </div>
 
-        {/* Right: Open Board + overflow menu */}
+        {/* Right: in-production cap (admin) + Open Board + overflow menu */}
         <div className="flex items-center gap-2 flex-shrink-0">
+          {isAdmin && (
+            <InProductionLimitStepper
+              value={client.in_production_limit ?? 1}
+              onChange={onLimitChange}
+            />
+          )}
           <button
             onClick={onOpenBoard}
             className="flex items-center gap-1.5 rounded-xl bg-[var(--brand)] hover:bg-[var(--brand-hover)] px-3.5 py-2 text-xs font-semibold text-white transition-colors"
@@ -504,7 +538,7 @@ function UsersPanel({ client, users, loading, onClose, onInvite, onResetPassword
             <UserPlus className="h-3 w-3" />
             Invite user
           </button>
-          <button onClick={onClose} className="text-[var(--text-dim)] hover:text-[var(--text)]"><X className="h-4 w-4" /></button>
+          <button onClick={onClose} aria-label="Close panel" className="text-[var(--text-dim)] hover:text-[var(--text)]"><X className="h-4 w-4" /></button>
         </div>
       </div>
       {loading ? (
@@ -611,7 +645,7 @@ function BrandingPanel({ client, onUpdate, onClose }: { client: Client; onUpdate
     <div className="border-t border-[var(--border)] bg-[var(--surface-2)] px-5 py-4 space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Portal branding</p>
-        <button onClick={onClose} className="text-[var(--text-dim)] hover:text-[var(--text)]"><X className="h-4 w-4" /></button>
+        <button onClick={onClose} aria-label="Close panel" className="text-[var(--text-dim)] hover:text-[var(--text)]"><X className="h-4 w-4" /></button>
       </div>
       <div>
         <p className="text-xs font-medium text-[var(--text-muted)] mb-2">Logo</p>
@@ -688,7 +722,7 @@ function AccessPanel({ client, staff, onClose, onInvite, onToggle }: {
             <UserPlus className="h-3 w-3" />
             Invite editor
           </button>
-          <button onClick={onClose} className="text-[var(--text-dim)] hover:text-[var(--text)]"><X className="h-4 w-4" /></button>
+          <button onClick={onClose} aria-label="Close panel" className="text-[var(--text-dim)] hover:text-[var(--text)]"><X className="h-4 w-4" /></button>
         </div>
       </div>
       {staff.length === 0 ? (
@@ -727,6 +761,40 @@ function AccessPanel({ client, staff, onClose, onInvite, onToggle }: {
           })}
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── In-Production Limit Stepper ─────────────────────────────────────────────
+// Admin-only ±/N/± control for clients.in_production_limit (range 1–10).
+// The value is read by migration 007's auto_promote_backlog() function to
+// decide how many backlog briefs can be promoted when a slot opens up.
+
+function InProductionLimitStepper({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const canDecrement = value > 1
+  const canIncrement = value < 10
+  return (
+    <div
+      className="flex items-center gap-0.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-0.5"
+      title="Max briefs allowed in production at once"
+    >
+      <button
+        onClick={() => canDecrement && onChange(value - 1)}
+        disabled={!canDecrement}
+        aria-label="Decrease in-production limit"
+        className="flex items-center justify-center h-7 w-7 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)] disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+      >
+        <Minus className="h-3 w-3" />
+      </button>
+      <div className="min-w-[1.5rem] text-center text-xs font-semibold text-[var(--text)] tabular-nums">{value}</div>
+      <button
+        onClick={() => canIncrement && onChange(value + 1)}
+        disabled={!canIncrement}
+        aria-label="Increase in-production limit"
+        className="flex items-center justify-center h-7 w-7 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-3)] disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+      >
+        <Plus className="h-3 w-3" />
+      </button>
     </div>
   )
 }
@@ -778,7 +846,7 @@ function InviteUserModal({ client, onClose, onDone }: { client: Client; onClose:
             <p className="text-xs text-[var(--text-muted)]">{client.name}</p>
           </div>
         </div>
-        <button onClick={onClose} className="rounded-lg p-1 text-[var(--text-dim)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]"><X className="h-5 w-5" /></button>
+        <button onClick={onClose} aria-label="Close modal" className="rounded-lg p-1 text-[var(--text-dim)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]"><X className="h-5 w-5" /></button>
       </div>
       {!done ? (
         <div className="space-y-3">
@@ -872,7 +940,7 @@ function NewClientModal({ onClose, onCreated }: { onClose: () => void; onCreated
             ))}
           </div>
         </div>
-        <button onClick={onClose} className="rounded-lg p-1 text-[var(--text-dim)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]"><X className="h-5 w-5" /></button>
+        <button onClick={onClose} aria-label="Close modal" className="rounded-lg p-1 text-[var(--text-dim)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]"><X className="h-5 w-5" /></button>
       </div>
       {step === 'details' && (
         <div className="space-y-4">
@@ -986,7 +1054,7 @@ function InviteStaffModal({ onClose, onDone }: { onClose: () => void; onDone: (m
             <p className="text-xs text-[var(--text-muted)]">SwipeUp editor — invite only</p>
           </div>
         </div>
-        <button onClick={onClose} className="rounded-lg p-1 text-[var(--text-dim)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]"><X className="h-5 w-5" /></button>
+        <button onClick={onClose} aria-label="Close modal" className="rounded-lg p-1 text-[var(--text-dim)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]"><X className="h-5 w-5" /></button>
       </div>
       {!done ? (
         <div className="space-y-3">
