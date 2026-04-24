@@ -1,26 +1,26 @@
 'use client'
 
 /**
- * Per-client board — mirrors the Portal's Creative Requests page exactly.
+ * Per-client board — 3 columns matching the Hub's master pipeline:
+ *   In Production · Ready for Review · Approved
  *
- * 3 columns: Backlog, In Production, Approved (the same as the Portal's
- * /trello page). "Ready for Review" is an internal-only stage and lives
- * only on the master Production Pipeline view.
+ * The Portal owns the Backlog concept; briefs with pipeline_status='backlog'
+ * only show on the Portal side and are filtered out of this board. Any time
+ * a slot in In Production opens up, the DB-side auto_promote_backlog()
+ * function (migration 007) takes care of promoting the next backlog brief
+ * per the client's in_production_limit.
  *
  * Hub-only overlays:
- *   - Sticky header with a "Back" button and the "Client portal" link.
+ *   - Sticky header with "Back" button and "Client portal" link.
  *   - BriefCard shows a tiny assigned-designer chip on the bottom row.
  *   - BriefPanel exposes an "Internal" comments tab (is_internal=true) and
  *     an "Assigned designer" picker that writes to briefs.assigned_to.
  *   - "With client" blue pill on a card when pipeline_status='client_review'.
- *
- * All styling, spacing, and card/drawer chrome is ported from the Portal
- * (see components/pipeline/PortalBoard.tsx).
  */
 
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState, use } from 'react'
+import { useEffect, useMemo, useState, use } from 'react'
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd'
 import { Plus, ChevronDown, ArrowLeft, ExternalLink, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -32,6 +32,32 @@ import {
 interface Client { id: string; name: string; slug: string; color: string; logo_url: string | null }
 interface HubStaffLite { id: string; name: string | null; avatar_url: string | null; email: string | null }
 
+type ColumnKey = 'in_production' | 'ready_for_review' | 'approved'
+
+const COLUMNS: Array<{ key: ColumnKey; label: string; dot: string; empty: string }> = [
+  { key: 'in_production',    label: 'In Production',    dot: 'bg-blue-400',    empty: 'Nothing in production' },
+  { key: 'ready_for_review', label: 'Ready for Review', dot: 'bg-violet-400',  empty: 'No drafts to review' },
+  { key: 'approved',         label: 'Approved',         dot: 'bg-emerald-400', empty: 'No approved briefs yet' },
+]
+
+/** Column resolution — Hub has 3 columns. Portal Backlog briefs
+ *  (pipeline_status='backlog') are filtered before this ever runs. */
+function columnFor(b: Brief): ColumnKey {
+  if (b.pipeline_status === 'approved') return 'approved'
+  if (b.internal_status === 'approved_by_client') return 'approved'
+  if (b.pipeline_status === 'client_review') return 'ready_for_review'
+  if (b.internal_status === 'in_review') return 'ready_for_review'
+  return 'in_production'
+}
+
+function dbStatusForColumn(col: ColumnKey): { pipeline_status: string; internal_status: string } {
+  switch (col) {
+    case 'in_production':    return { pipeline_status: 'in_production', internal_status: 'in_production' }
+    case 'ready_for_review': return { pipeline_status: 'client_review', internal_status: 'in_review' }
+    case 'approved':         return { pipeline_status: 'approved',      internal_status: 'approved_by_client' }
+  }
+}
+
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'portal.swipeupco.com'
 
 export default function ClientPipeline({ params }: { params: Promise<{ clientSlug: string }> }) {
@@ -40,7 +66,6 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
 
   const [client, setClient]           = useState<Client | null>(null)
   const [briefs, setBriefs]           = useState<Brief[]>([])
-  const [backlogOrder, setBacklogOrder] = useState<Brief[]>([])
   const [hubStaff, setHubStaff]       = useState<HubStaffLite[]>([])
   const [loading, setLoading]         = useState(true)
   const [selectedBrief, setSelectedBrief] = useState<Brief | null>(null)
@@ -57,10 +82,12 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
     setClient(clientData)
 
     const [{ data: briefData }, { data: staffData }] = await Promise.all([
+      // Hub excludes Portal-backlog briefs — those only surface on the Portal.
       supabase
         .from('briefs')
         .select('*')
         .eq('client_id', clientData.id)
+        .neq('pipeline_status', 'backlog')
         .order('sort_order', { ascending: true }),
       supabase
         .from('profiles')
@@ -70,16 +97,6 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
 
     const all = (briefData ?? []) as Brief[]
     setHubStaff((staffData as HubStaffLite[]) ?? [])
-
-    // Enforce: only 1 brief in production at a time (same rule the Portal uses)
-    const inProd = all.filter(b => ['in_production','client_review','qa_review'].includes(b.pipeline_status))
-    if (inProd.length > 1) {
-      const toBacklog = inProd.slice(1)
-      await Promise.all(toBacklog.map(b =>
-        supabase.from('briefs').update({ pipeline_status: 'backlog', internal_status: 'backlog' }).eq('id', b.id)
-      ))
-      toBacklog.forEach(b => { b.pipeline_status = 'backlog'; b.internal_status = 'backlog' })
-    }
 
     // Enrich with creator, tagged_users, and the Hub's assigned_designer.
     const briefIds   = all.map(b => b.id)
@@ -131,109 +148,68 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
       .on('postgres_changes', { event: '*', schema: 'public', table: 'briefs' }, () => load(true))
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientSlug])
 
-  useEffect(() => {
-    setBacklogOrder(
-      briefs
-        .filter(b => b.pipeline_status === 'backlog')
-        .sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999))
-    )
+  const byColumn = useMemo(() => {
+    const out: Record<ColumnKey, Brief[]> = { in_production: [], ready_for_review: [], approved: [] }
+    for (const b of briefs) out[columnFor(b)].push(b)
+    return out
   }, [briefs])
 
-  // ── DnD identical to Portal's trello page ─────────────────────────────────
-  async function handleDragEnd(result: DropResult) {
-    const { source, destination, draggableId } = result
-    if (!destination) return
-    if (source.droppableId === destination.droppableId && source.index === destination.index) return
-
+  async function moveToColumn(briefId: string, target: ColumnKey) {
+    const { pipeline_status, internal_status } = dbStatusForColumn(target)
+    setBriefs(prev => prev.map(b => b.id === briefId ? { ...b, pipeline_status, internal_status } : b))
+    if (selectedBrief?.id === briefId) {
+      setSelectedBrief(prev => prev ? { ...prev, pipeline_status, internal_status } : null)
+    }
     const supabase = createClient()
+    await supabase.from('briefs').update({ pipeline_status, internal_status }).eq('id', briefId)
+  }
 
-    if (source.droppableId === 'backlog' && destination.droppableId === 'backlog') {
-      const items = Array.from(backlogOrder)
-      const [moved] = items.splice(source.index, 1)
-      items.splice(destination.index, 0, moved)
-      setBacklogOrder(items)
-      await Promise.all(items.map((b, i) => supabase.from('briefs').update({ sort_order: i }).eq('id', b.id)))
-      return
-    }
-
-    if (source.droppableId === 'backlog' && destination.droppableId === 'in-production') {
-      const currentInProd = briefs.filter(b => ['in_production','client_review','qa_review'].includes(b.pipeline_status))
-      if (currentInProd.length > 0) {
-        await Promise.all(currentInProd.map(b =>
-          supabase.from('briefs').update({ pipeline_status: 'backlog', internal_status: 'backlog' }).eq('id', b.id)
-        ))
-      }
-      await supabase.from('briefs')
-        .update({ pipeline_status: 'in_production', internal_status: 'in_production' })
-        .eq('id', draggableId)
-      setBriefs(prev => prev.map(b => {
-        if (currentInProd.find(p => p.id === b.id)) return { ...b, pipeline_status: 'backlog', internal_status: 'backlog' }
-        if (b.id === draggableId) return { ...b, pipeline_status: 'in_production', internal_status: 'in_production' }
-        return b
-      }))
-      return
-    }
-
-    if (source.droppableId === 'in-production' && destination.droppableId === 'backlog') {
-      await supabase.from('briefs')
-        .update({ pipeline_status: 'backlog', internal_status: 'backlog' })
-        .eq('id', draggableId)
-      setBriefs(prev => prev.map(b =>
-        b.id === draggableId ? { ...b, pipeline_status: 'backlog', internal_status: 'backlog' } : b
-      ))
-      return
-    }
+  async function handleDragEnd(result: DropResult) {
+    const { destination, draggableId } = result
+    if (!destination) return
+    const target = destination.droppableId as ColumnKey
+    const brief = briefs.find(b => b.id === draggableId)
+    if (!brief) return
+    if (columnFor(brief) === target) return
+    await moveToColumn(draggableId, target)
   }
 
   async function handleApprove(briefId: string) {
+    // Approve is retained here for BriefPanel backward compat, but the Hub
+    // drawer no longer shows an Approve button (clients approve, not us).
+    // DB trigger (migration 007) auto-promotes the next backlog brief into
+    // the vacated In Production slot.
     const supabase = createClient()
     await supabase
       .from('briefs')
       .update({ pipeline_status: 'approved', internal_status: 'approved_by_client' })
       .eq('id', briefId)
-
-    let newBriefs = briefs.map(b =>
+    setBriefs(prev => prev.map(b =>
       b.id === briefId ? { ...b, pipeline_status: 'approved', internal_status: 'approved_by_client' } : b
-    )
-
-    // Auto-promote top backlog brief if production slot is now empty
-    const wasInProduction = briefs.filter(b =>
-      ['in_production', 'client_review', 'qa_review'].includes(b.pipeline_status)
-    )
-    const nextBacklog = briefs
-      .filter(b => b.pipeline_status === 'backlog')
-      .sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999))[0]
-
-    if (wasInProduction.length === 1 && nextBacklog) {
-      await supabase
-        .from('briefs')
-        .update({ pipeline_status: 'in_production', internal_status: 'in_production' })
-        .eq('id', nextBacklog.id)
-      newBriefs = newBriefs.map(b =>
-        b.id === nextBacklog.id ? { ...b, pipeline_status: 'in_production', internal_status: 'in_production' } : b
-      )
-    }
-
-    setBriefs(newBriefs)
+    ))
     if (selectedBrief?.id === briefId) {
       setSelectedBrief(prev => prev ? { ...prev, pipeline_status: 'approved', internal_status: 'approved_by_client' } : null)
     }
   }
 
   async function handleRequestRevisions(briefId: string) {
+    // Hub QA pulls the brief back from Ready for Review into In Production.
+    // Never pings the client — internal only. If the brief was already
+    // pushed (pipeline_status='client_review') we also clear that so
+    // Portal doesn't keep it in its own review queue.
     const supabase = createClient()
     await supabase
       .from('briefs')
-      .update({ pipeline_status: 'client_review', internal_status: 'revisions_required' })
+      .update({ pipeline_status: 'in_production', internal_status: 'in_production' })
       .eq('id', briefId)
     setBriefs(prev => prev.map(b =>
-      b.id === briefId ? { ...b, pipeline_status: 'client_review', internal_status: 'revisions_required' } : b
+      b.id === briefId ? { ...b, pipeline_status: 'in_production', internal_status: 'in_production' } : b
     ))
     if (selectedBrief?.id === briefId) {
-      setSelectedBrief(prev => prev ? { ...prev, pipeline_status: 'client_review', internal_status: 'revisions_required' } : null)
+      setSelectedBrief(prev => prev ? { ...prev, pipeline_status: 'in_production', internal_status: 'in_production' } : null)
     }
   }
 
@@ -313,16 +289,12 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
     } : prev)
   }
 
-  const inProduction  = briefs.filter(b => ['in_production', 'client_review', 'qa_review'].includes(b.pipeline_status))
-  const allApproved   = briefs.filter(b => b.pipeline_status === 'approved')
-  const approvedCards = showAllApproved ? allApproved : allApproved.slice(0, 10)
-
   const clientColor = client?.color ?? '#4950F8'
   const portalUrl = client ? `https://${client.slug}.${ROOT_DOMAIN}` : '#'
+  const allApproved = byColumn.approved
+  const approvedCards = showAllApproved ? allApproved : allApproved.slice(0, 10)
 
   return (
-    // pipeline-bg: radial brand-violet glow from bottom-left on a near-black
-    // base in dark mode; subtle same-recipe variant in light. See app/globals.css.
     <div className="pipeline-bg min-h-[calc(100vh-3.5rem)] text-gray-900 dark:text-white">
       <DragDropContext onDragEnd={handleDragEnd}>
         <div className="p-6 space-y-5">
@@ -379,160 +351,128 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
               {[1,2,3].map(n => <div key={n} className="flex-shrink-0 w-[272px] h-96 rounded-2xl bg-gray-200 dark:bg-white/5 animate-pulse" />)}
             </div>
           ) : (
-            // Trello-style: fixed 272px columns, board scrolls horizontally
-            // when the 3 don't fit; each column scrolls vertically on overflow.
             <div className="flex gap-3 items-start overflow-x-auto pb-2">
+              {COLUMNS.map(col => {
+                const colBriefs = byColumn[col.key]
 
-              {/* Backlog */}
-              <div className="flex-shrink-0 w-[272px] flex flex-col max-h-[calc(100vh-14rem)] bg-white dark:bg-[#0F1420] rounded-2xl border border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50 dark:border-white/[0.06] flex-shrink-0">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-amber-400 flex-shrink-0" />
-                    <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100">Backlog</h3>
-                    <span className="text-[11px] font-medium text-gray-400 dark:text-zinc-400 bg-gray-100 dark:bg-white/10 rounded-full px-2 py-0.5">
-                      {backlogOrder.length}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => setShowBriefModal(true)}
-                    className="h-7 w-7 rounded-lg flex items-center justify-center text-gray-400 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-700 dark:hover:text-white transition-colors"
+                // Approved column is read-only (no drop target) and uses the
+                // compact ApprovedBriefCard. See Task 6 for re-run behaviour.
+                if (col.key === 'approved') {
+                  return (
+                    <div
+                      key={col.key}
+                      className="flex-shrink-0 w-[272px] flex flex-col max-h-[calc(100vh-14rem)] bg-white dark:bg-[#0F1420] rounded-2xl border border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none overflow-hidden"
+                    >
+                      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50 dark:border-white/[0.06] flex-shrink-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`h-2 w-2 rounded-full flex-shrink-0 ${col.dot}`} />
+                          <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100">{col.label}</h3>
+                          <span className="text-[11px] font-medium text-gray-400 dark:text-zinc-400 bg-gray-100 dark:bg-white/10 rounded-full px-2 py-0.5">
+                            {allApproved.length}
+                          </span>
+                        </div>
+                        <div className="h-7 w-7" />
+                      </div>
+                      <p className="px-4 pt-3 text-[11px] text-gray-400 dark:text-zinc-500">
+                        Approved briefs auto-delete after 90 days
+                      </p>
+                      <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-[200px]">
+                        {approvedCards.map(brief => (
+                          <button
+                            key={brief.id}
+                            type="button"
+                            onClick={() => setSelectedBrief(brief)}
+                            className="block w-full text-left cursor-pointer"
+                          >
+                            <ApprovedBriefCard brief={brief} clientColor={clientColor} />
+                          </button>
+                        ))}
+                        {allApproved.length === 0 && (
+                          <div className="rounded-2xl border border-dashed border-gray-200 dark:border-white/[0.08] bg-gray-50/50 dark:bg-white/[0.02] py-12 text-center">
+                            <p className="text-xs text-gray-400 dark:text-zinc-500">{col.empty}</p>
+                          </div>
+                        )}
+                        {allApproved.length > 10 && (
+                          <button
+                            onClick={() => setShowAllApproved(v => !v)}
+                            className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 py-2.5 text-xs font-medium text-gray-500 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-white/10 dark:hover:text-white transition-colors"
+                          >
+                            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showAllApproved ? 'rotate-180' : ''}`} />
+                            {showAllApproved ? 'Show less' : `See all ${allApproved.length} approved`}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )
+                }
+
+                return (
+                  <div
+                    key={col.key}
+                    className="flex-shrink-0 w-[272px] flex flex-col max-h-[calc(100vh-14rem)] bg-white dark:bg-[#0F1420] rounded-2xl border border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none overflow-hidden"
                   >
-                    <Plus className="h-4 w-4" />
-                  </button>
-                </div>
-
-                <Droppable droppableId="backlog">
-                  {(provided, snapshot) => (
-                    <div
-                      ref={provided.innerRef}
-                      {...provided.droppableProps}
-                      className={`flex-1 overflow-y-auto p-3 space-y-3 min-h-[200px] transition-colors ${snapshot.isDraggingOver ? 'bg-gray-100/60 dark:bg-white/[0.04] ring-1 ring-inset ring-gray-200 dark:ring-white/[0.08]' : ''}`}
-                    >
-                      {backlogOrder.map((brief, index) => (
-                        <Draggable key={brief.id} draggableId={brief.id} index={index}>
-                          {(provided, snapshot) => (
-                            <div
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              style={provided.draggableProps.style}
-                            >
-                              <BriefCard
-                                brief={brief}
-                                clientColor={clientColor}
-                                dragHandleProps={provided.dragHandleProps}
-                                isDragging={snapshot.isDragging}
-                                isUpNext={index === 0}
-                                onOpen={() => !snapshot.isDragging && setSelectedBrief(brief)}
-                                onApprove={() => handleApprove(brief.id)}
-                                onRequestRevisions={() => handleRequestRevisions(brief.id)}
-                                onCoverUpload={(file) => handleCoverUpload(brief.id, file)}
-                                onCoverDelete={() => handleCoverDelete(brief.id)}
-                              />
-                            </div>
-                          )}
-                        </Draggable>
-                      ))}
-                      {provided.placeholder}
-                      {backlogOrder.length === 0 && (
-                        <div className="rounded-2xl border border-dashed border-gray-200 dark:border-white/[0.08] bg-gray-50/50 dark:bg-white/[0.02] py-12 text-center">
-                          <p className="text-xs text-gray-400 dark:text-zinc-500">No briefs in backlog</p>
-                        </div>
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50 dark:border-white/[0.06] flex-shrink-0">
+                      <div className="flex items-center gap-2">
+                        <span className={`h-2 w-2 rounded-full flex-shrink-0 ${col.dot}`} />
+                        <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100">{col.label}</h3>
+                        <span className="text-[11px] font-medium text-gray-400 dark:text-zinc-400 bg-gray-100 dark:bg-white/10 rounded-full px-2 py-0.5">
+                          {colBriefs.length}
+                        </span>
+                      </div>
+                      {col.key === 'in_production' ? (
+                        <button
+                          onClick={() => setShowBriefModal(true)}
+                          aria-label="New brief"
+                          className="h-7 w-7 rounded-lg flex items-center justify-center text-gray-400 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-700 dark:hover:text-white transition-colors"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      ) : (
+                        <div className="h-7 w-7" />
                       )}
                     </div>
-                  )}
-                </Droppable>
-              </div>
-
-              {/* In Production */}
-              <div className="flex-shrink-0 w-[272px] flex flex-col max-h-[calc(100vh-14rem)] bg-white dark:bg-[#0F1420] rounded-2xl border border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50 dark:border-white/[0.06] flex-shrink-0">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-blue-400 flex-shrink-0" />
-                    <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100">In Production</h3>
-                    <span className="text-[11px] font-medium text-gray-400 dark:text-zinc-400 bg-gray-100 dark:bg-white/10 rounded-full px-2 py-0.5">
-                      {inProduction.length}
-                    </span>
-                  </div>
-                  <div className="h-7 w-7" />
-                </div>
-                <Droppable droppableId="in-production">
-                  {(provided, snapshot) => (
-                    <div
-                      ref={provided.innerRef}
-                      {...provided.droppableProps}
-                      className={`flex-1 overflow-y-auto p-3 space-y-3 min-h-[200px] transition-colors ${snapshot.isDraggingOver ? 'bg-gray-100/60 dark:bg-white/[0.04] ring-1 ring-inset ring-gray-200 dark:ring-white/[0.08]' : ''}`}
-                    >
-                      {inProduction.map((brief, index) => (
-                        <Draggable key={brief.id} draggableId={brief.id} index={index}>
-                          {(provided, snapshot) => (
-                            <div
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              style={provided.draggableProps.style}
-                            >
-                              <BriefCard
-                                brief={brief}
-                                clientColor={clientColor}
-                                reviewMode
-                                dragHandleProps={provided.dragHandleProps}
-                                isDragging={snapshot.isDragging}
-                                onOpen={() => !snapshot.isDragging && setSelectedBrief(brief)}
-                                onApprove={() => handleApprove(brief.id)}
-                                onRequestRevisions={() => handleRequestRevisions(brief.id)}
-                                onCoverUpload={(file) => handleCoverUpload(brief.id, file)}
-                                onCoverDelete={() => handleCoverDelete(brief.id)}
-                              />
+                    <Droppable droppableId={col.key}>
+                      {(provided, snapshot) => (
+                        <div
+                          ref={provided.innerRef}
+                          {...provided.droppableProps}
+                          className={`flex-1 overflow-y-auto p-3 space-y-3 min-h-[200px] transition-colors ${snapshot.isDraggingOver ? 'bg-gray-100/60 dark:bg-white/[0.04] ring-1 ring-inset ring-gray-200 dark:ring-white/[0.08]' : ''}`}
+                        >
+                          {colBriefs.map((brief, index) => (
+                            <Draggable key={brief.id} draggableId={brief.id} index={index}>
+                              {(dragProvided, dragSnapshot) => (
+                                <div
+                                  ref={dragProvided.innerRef}
+                                  {...dragProvided.draggableProps}
+                                  style={dragProvided.draggableProps.style}
+                                >
+                                  <BriefCard
+                                    brief={brief}
+                                    clientColor={clientColor}
+                                    reviewMode={col.key === 'ready_for_review'}
+                                    dragHandleProps={dragProvided.dragHandleProps}
+                                    isDragging={dragSnapshot.isDragging}
+                                    onOpen={() => !dragSnapshot.isDragging && setSelectedBrief(brief)}
+                                    onRequestRevisions={() => handleRequestRevisions(brief.id)}
+                                    onCoverUpload={(file) => handleCoverUpload(brief.id, file)}
+                                    onCoverDelete={() => handleCoverDelete(brief.id)}
+                                  />
+                                </div>
+                              )}
+                            </Draggable>
+                          ))}
+                          {provided.placeholder}
+                          {colBriefs.length === 0 && (
+                            <div className="rounded-2xl border border-dashed border-gray-200 dark:border-white/[0.08] bg-gray-50/50 dark:bg-white/[0.02] py-12 text-center">
+                              <p className="text-xs text-gray-400 dark:text-zinc-500">{col.empty}</p>
                             </div>
                           )}
-                        </Draggable>
-                      ))}
-                      {provided.placeholder}
-                      {inProduction.length === 0 && (
-                        <div className="rounded-2xl border border-dashed border-gray-200 dark:border-white/[0.08] bg-gray-50/50 dark:bg-white/[0.02] py-12 text-center">
-                          <p className="text-xs text-gray-400 dark:text-zinc-500">Nothing in production yet</p>
-                          <p className="text-[11px] text-gray-300 dark:text-zinc-600 mt-1">Drag a brief here or approve one</p>
                         </div>
                       )}
-                    </div>
-                  )}
-                </Droppable>
-              </div>
-
-              {/* Approved */}
-              <div className="flex-shrink-0 w-[272px] flex flex-col max-h-[calc(100vh-14rem)] bg-white dark:bg-[#0F1420] rounded-2xl border border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50 dark:border-white/[0.06] flex-shrink-0">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-emerald-400 flex-shrink-0" />
-                    <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100">Approved</h3>
-                    <span className="text-[11px] font-medium text-gray-400 dark:text-zinc-400 bg-gray-100 dark:bg-white/10 rounded-full px-2 py-0.5">
-                      {allApproved.length}
-                    </span>
+                    </Droppable>
                   </div>
-                  <div className="h-7 w-7" />
-                </div>
-                <p className="px-4 pt-3 text-[11px] text-gray-400 dark:text-zinc-500">
-                  Approved briefs auto-delete after 90 days
-                </p>
-                <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-[200px]">
-                  {approvedCards.map(brief => (
-                    <ApprovedBriefCard key={brief.id} brief={brief} clientColor={clientColor} />
-                  ))}
-                  {allApproved.length === 0 && (
-                    <div className="rounded-2xl border border-dashed border-gray-200 dark:border-white/[0.08] bg-gray-50/50 dark:bg-white/[0.02] py-12 text-center">
-                      <p className="text-xs text-gray-400 dark:text-zinc-500">No approved briefs yet</p>
-                    </div>
-                  )}
-                  {allApproved.length > 10 && (
-                    <button
-                      onClick={() => setShowAllApproved(v => !v)}
-                      className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 py-2.5 text-xs font-medium text-gray-500 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-white/10 dark:hover:text-white transition-colors"
-                    >
-                      <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showAllApproved ? 'rotate-180' : ''}`} />
-                      {showAllApproved ? 'Show less' : `See all ${allApproved.length} approved`}
-                    </button>
-                  )}
-                </div>
-              </div>
+                )
+              })}
             </div>
           )}
 
@@ -566,7 +506,6 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
         </div>
       </DragDropContext>
 
-      {/* Page-level loading overlay — kept outside DnD to avoid layout shift */}
       {loading === false && !client && (
         <div className="flex items-center justify-center py-20">
           <div className="flex items-center gap-2 text-gray-400">

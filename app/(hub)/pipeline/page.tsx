@@ -22,32 +22,27 @@ import {
   Brief, BriefCard, BriefPanel,
 } from '@/components/pipeline/PortalBoard'
 
-type ColumnKey = 'backlog' | 'in_production' | 'ready_for_review' | 'approved'
+type ColumnKey = 'in_production' | 'ready_for_review' | 'approved'
 
 const COLUMNS: Array<{ key: ColumnKey; label: string; dot: string; empty: string }> = [
-  { key: 'backlog',          label: 'Backlog',          dot: 'bg-amber-400',   empty: 'Nothing in backlog' },
   { key: 'in_production',    label: 'In Production',    dot: 'bg-blue-400',    empty: 'No active work' },
   { key: 'ready_for_review', label: 'Ready for Review', dot: 'bg-violet-400',  empty: 'No drafts ready' },
   { key: 'approved',         label: 'Approved',         dot: 'bg-emerald-400', empty: 'Nothing approved yet' },
 ]
 
-/** Map a brief onto its Hub column. Matches the Pass-1.5 Issue-4 fix:
- *  Backlog is the default bucket for any Portal-created brief with
- *  pipeline_status='in_production' that hasn't been moved through Hub
- *  stages yet. It leaves Backlog the moment an "active" signal fires. */
+/** Map a brief onto its Hub column. Hub is 3-col (no Backlog) — Portal owns
+ *  the Backlog concept; anything sitting at pipeline_status='in_production'
+ *  on any client shows in the Hub's In Production column by default. */
 function columnFor(b: Brief): ColumnKey {
   if (b.pipeline_status === 'approved') return 'approved'
   if (b.internal_status === 'approved_by_client') return 'approved'
   if (b.pipeline_status === 'client_review') return 'ready_for_review'
   if (b.internal_status === 'in_review') return 'ready_for_review'
-  if (b.internal_status === 'revisions_required') return 'in_production'
-  if (b.draft_url) return 'in_production'
-  return 'backlog'
+  return 'in_production'
 }
 
 function dbStatusForColumn(col: ColumnKey): { pipeline_status: string; internal_status: string } {
   switch (col) {
-    case 'backlog':          return { pipeline_status: 'in_production', internal_status: 'in_production' }
     case 'in_production':    return { pipeline_status: 'in_production', internal_status: 'in_production' }
     case 'ready_for_review': return { pipeline_status: 'client_review', internal_status: 'in_review' }
     case 'approved':         return { pipeline_status: 'approved',      internal_status: 'approved_by_client' }
@@ -185,7 +180,7 @@ export default function InternalPipeline() {
   }, [briefs, query, myOnly, unassignedOnly, awaitingClient, currentUserId])
 
   const byColumn = useMemo(() => {
-    const out: Record<ColumnKey, Brief[]> = { backlog: [], in_production: [], ready_for_review: [], approved: [] }
+    const out: Record<ColumnKey, Brief[]> = { in_production: [], ready_for_review: [], approved: [] }
     for (const b of filtered) out[columnFor(b)].push(b)
     return out
   }, [filtered])
@@ -316,7 +311,7 @@ export default function InternalPipeline() {
             inside each column when its card list overflows. */}
         {loading ? (
           <div className="flex gap-3 overflow-x-auto pb-2">
-            {[1,2,3,4].map(n => <div key={n} className="flex-shrink-0 w-[272px] h-96 rounded-2xl bg-gray-200 dark:bg-white/5 animate-pulse" />)}
+            {[1,2,3].map(n => <div key={n} className="flex-shrink-0 w-[272px] h-96 rounded-2xl bg-gray-200 dark:bg-white/5 animate-pulse" />)}
           </div>
         ) : (
           <DragDropContext onDragEnd={onDragEnd}>
