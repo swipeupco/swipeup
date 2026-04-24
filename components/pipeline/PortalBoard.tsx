@@ -249,11 +249,13 @@ export function BriefCard({
     // drag initiation via {...STOP_DRAG}.
     <div
       {...(dragHandleProps ?? {})}
-      className={`relative overflow-hidden rounded-2xl bg-white dark:bg-[#161B26] p-4 transition-all ${isDragging
+      // Dark-mode surface lifted to #22283A (from #161B26) so cards separate
+      // clearly from the column at #0F1420 and the canvas at #0B1220 — Trello
+      // "cards float on darker board" look. Light mode unchanged (bg-white).
+      className={`relative overflow-hidden rounded-2xl bg-white dark:bg-[#22283A] p-4 transition-all ${isDragging
         ? 'rotate-1 scale-105 cursor-grabbing'
-        // Drops the card's top border — it renders as a thin blue-tinted line
-        // on dark mode against the pipeline gradient. Sides + bottom remain
-        // so cards still separate cleanly from neighbours in light mode.
+        // Sides + bottom border only — top dropped to avoid the blue-tinted
+        // edge against the pipeline gradient.
         : 'border-x border-b border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none hover:shadow-md dark:hover:border-white/[0.14] cursor-grab active:cursor-grabbing'
       }`}
       style={isDragging ? {
@@ -261,15 +263,9 @@ export function BriefCard({
       } : {}}
       onClick={onOpen}
     >
-      {/* Client colour stripe (3px, left edge) — accents the card with its
-          client's brand colour in both the per-client and master pipeline
-          views. Sits inside the rounded-2xl + overflow-hidden wrapper so it
-          follows the corner shape. */}
-      <span
-        aria-hidden
-        className="pointer-events-none absolute left-0 top-0 bottom-0 w-[3px]"
-        style={{ backgroundColor: clientColor }}
-      />
+      {/* Client colour stripe removed — the logo + name pill in the top row
+          identifies the client on its own; the extra coloured edge was
+          visual noise. Kept `relative overflow-hidden` for future use. */}
       {/* Hub-only: client logo + name at top (master pipeline only) */}
       {showClientChip && (brief.client_name || brief.client_color) && (
         <div className="flex items-center gap-1.5 mb-2 pb-2 border-b border-gray-50 dark:border-white/[0.06]">
@@ -531,14 +527,9 @@ export function BriefCard({
 export function ApprovedBriefCard({ brief, showClientChip = false }: { brief: Brief; clientColor?: string; showClientChip?: boolean }) {
   const typeInfo = CONTENT_TYPES.find(t => t.id === brief.content_type)
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#161B26] border-x border-b border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none p-4">
-      {/* Client colour stripe — matches BriefCard so both card variants
-          share the same brand accent. */}
-      <span
-        aria-hidden
-        className="pointer-events-none absolute left-0 top-0 bottom-0 w-[3px]"
-        style={{ backgroundColor: brief.client_color ?? '#4950F8' }}
-      />
+    <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#22283A] border-x border-b border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none p-4">
+      {/* Client colour stripe removed — matches BriefCard, typography does
+          the work of identifying the client via the logo + name pill. */}
       {showClientChip && brief.client_name && (
         <div className="flex items-center gap-1.5 mb-2 pb-2 border-b border-gray-50 dark:border-white/[0.06]">
           <div
