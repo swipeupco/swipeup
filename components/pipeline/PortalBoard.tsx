@@ -895,34 +895,55 @@ export function BriefPanel({
           </div>
         )}
 
-        {/* Header bar */}
-        <div className="flex-shrink-0 px-6 py-4 flex items-start justify-between" style={{ backgroundColor: clientColor }}>
+        {/* Header bar — neutral chrome in both themes. Client-coloured bar
+            removed; the compact client logo + name pill at the top preserves
+            identification without colouring the drawer chrome. */}
+        <div className="flex-shrink-0 px-6 py-4 flex items-start justify-between bg-gray-100 dark:bg-[#1E2435]">
           <div className="flex-1 min-w-0">
-            {brief.campaign && (
-              <p className="text-xs font-medium mb-1" style={{ color: 'rgba(255,255,255,0.65)' }}>{brief.campaign}</p>
+            {brief.client_name && (
+              <div className="flex items-center gap-1.5 mb-3">
+                <div
+                  className="h-4 w-4 rounded flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0 overflow-hidden"
+                  style={{ backgroundColor: brief.client_color ?? clientColor }}
+                >
+                  {brief.client_logo
+                    // eslint-disable-next-line @next/next/no-img-element
+                    ? <img src={brief.client_logo} alt="" className="h-full w-full object-contain" />
+                    : brief.client_name.slice(0, 2).toUpperCase()
+                  }
+                </div>
+                <span className="text-[11px] font-semibold text-gray-600 dark:text-zinc-300 truncate">{brief.client_name}</span>
+              </div>
             )}
-            <h2 className="text-xl font-bold text-white leading-snug">{brief.name}</h2>
+            {brief.campaign && (
+              <p className="text-xs font-medium mb-1 text-gray-500 dark:text-zinc-400">{brief.campaign}</p>
+            )}
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white leading-snug">{brief.name}</h2>
             <div className="flex items-center gap-2 mt-3 flex-wrap">
               {typeInfo && (
-                <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold bg-white/20 text-white">
+                <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold bg-gray-200 dark:bg-white/10 text-gray-700 dark:text-zinc-200">
                   <typeInfo.icon className="h-3 w-3" />
                   {typeInfo.id}
                 </span>
               )}
               {isApproved && (
-                <span className="rounded-full px-3 py-1 text-[11px] font-semibold bg-emerald-400/30 text-white">Approved ✓</span>
+                <span className="rounded-full px-3 py-1 text-[11px] font-semibold bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">Approved ✓</span>
               )}
               {isReview && !isApproved && (
-                <span className="rounded-full px-3 py-1 text-[11px] font-semibold bg-white/20 text-white">In Production</span>
+                <span className="rounded-full px-3 py-1 text-[11px] font-semibold bg-gray-200 dark:bg-white/10 text-gray-700 dark:text-zinc-200">In Production</span>
               )}
               {brief.due_date && (
-                <span className="rounded-full px-3 py-1 text-[11px] font-medium bg-white/10 text-white/80">
+                <span className="rounded-full px-3 py-1 text-[11px] font-medium bg-gray-200/70 dark:bg-white/5 text-gray-600 dark:text-zinc-300">
                   Due {format(new Date(brief.due_date), 'd MMM yyyy')}
                 </span>
               )}
             </div>
           </div>
-          <button onClick={onClose} aria-label="Close brief" className="ml-4 flex-shrink-0 rounded-xl p-2 text-white/60 hover:text-white hover:bg-white/10 transition-colors">
+          <button
+            onClick={onClose}
+            aria-label="Close brief"
+            className="ml-4 flex-shrink-0 rounded-xl p-2 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+          >
             <X className="h-5 w-5" />
           </button>
         </div>
