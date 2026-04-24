@@ -32,7 +32,16 @@ const COLUMNS: Array<{ key: ColumnKey; label: string; dot: string; empty: string
 
 /** Map a brief onto its Hub column. Hub is 3-col (no Backlog) — Portal owns
  *  the Backlog concept; anything sitting at pipeline_status='in_production'
- *  on any client shows in the Hub's In Production column by default. */
+ *  on any client shows in the Hub's In Production column by default.
+ *
+ *  INVARIANT: column placement is derived from `pipeline_status` and
+ *  `internal_status` only. Draft URL presence (brief.draft_url) MUST NOT
+ *  affect which column a brief renders in — a brief can live in In
+ *  Production with or without a draft link. Clearing a draft link from the
+ *  drawer is a metadata edit, not a status transition. (A previous version
+ *  of this function used `if (!b.draft_url) return 'backlog'` which caused
+ *  briefs to appear to auto-demote when designers cleared a stale link.)
+ */
 function columnFor(b: Brief): ColumnKey {
   if (b.pipeline_status === 'approved') return 'approved'
   if (b.internal_status === 'approved_by_client') return 'approved'

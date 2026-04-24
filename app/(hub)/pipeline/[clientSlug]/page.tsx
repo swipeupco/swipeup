@@ -41,7 +41,13 @@ const COLUMNS: Array<{ key: ColumnKey; label: string; dot: string; empty: string
 ]
 
 /** Column resolution — Hub has 3 columns. Portal Backlog briefs
- *  (pipeline_status='backlog') are filtered before this ever runs. */
+ *  (pipeline_status='backlog') are filtered before this ever runs.
+ *
+ *  INVARIANT (same as master pipeline): column placement is derived from
+ *  pipeline_status and internal_status ONLY. Draft URL presence
+ *  (brief.draft_url) MUST NOT affect which column a brief renders in —
+ *  clearing a draft link is a metadata edit, not a status transition.
+ */
 function columnFor(b: Brief): ColumnKey {
   if (b.pipeline_status === 'approved') return 'approved'
   if (b.internal_status === 'approved_by_client') return 'approved'
