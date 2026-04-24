@@ -23,7 +23,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import {
-  CheckCircle2, Play, Plus, X, Send, ExternalLink,
+  CheckCircle2, Play, X, Send, ExternalLink,
   MessageSquare, RotateCcw, Loader2, ChevronDown, Clock,
   Video, Image, Mail, LayoutGrid, Mic, FileText, CircleDot,
   GripVertical, Upload, Trash2, AtSign, Pencil, Check, Lock, User as UserIcon,
@@ -251,7 +251,10 @@ export function BriefCard({
       {...(dragHandleProps ?? {})}
       className={`relative overflow-hidden rounded-2xl bg-white dark:bg-[#161B26] p-4 transition-all ${isDragging
         ? 'rotate-1 scale-105 cursor-grabbing'
-        : 'border border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none hover:shadow-md dark:hover:border-white/[0.14] cursor-grab active:cursor-grabbing'
+        // Drops the card's top border — it renders as a thin blue-tinted line
+        // on dark mode against the pipeline gradient. Sides + bottom remain
+        // so cards still separate cleanly from neighbours in light mode.
+        : 'border-x border-b border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none hover:shadow-md dark:hover:border-white/[0.14] cursor-grab active:cursor-grabbing'
       }`}
       style={isDragging ? {
         boxShadow: '0 8px 24px rgba(0,0,0,0.45)',
@@ -304,104 +307,90 @@ export function BriefCard({
         )}
       </div>
 
-      {/* Thumbnail / Cover */}
-      <div
-        className="relative h-28 rounded-xl mb-3 overflow-hidden"
-        onMouseEnter={() => setCoverHover(true)}
-        onMouseLeave={() => setCoverHover(false)}
-      >
-        {brief.cover_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
+      {/* Cover area — only rendered when an actual cover image is attached.
+          No attachment means no placeholder block; the card compacts
+          vertically. Cover uploads happen from the Files section in the
+          drawer (BriefAttachments), not from the card. */}
+      {brief.cover_url && (
+        <div
+          className="relative h-28 rounded-xl mb-3 overflow-hidden"
+          onMouseEnter={() => setCoverHover(true)}
+          onMouseLeave={() => setCoverHover(false)}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={brief.cover_url} alt="" className="h-full w-full object-cover" />
-        ) : (
-          // Cover placeholder — light pastel on light, flat ~15% brand-tint on dark.
-          // CSS custom props + Tailwind arbitrary-property classes keep this SSR-safe
-          // (no flash) across the .dark class toggle.
-          <div
-            className="h-full w-full flex items-center justify-center [background:var(--ph-light)] dark:[background:var(--ph-dark)]"
-            style={{
-              ['--ph-light' as string]: `linear-gradient(135deg, ${typeInfo?.color ?? '#6366f1'}22 0%, ${typeInfo?.color ?? '#6366f1'}44 100%)`,
-              ['--ph-dark'  as string]: `${typeInfo?.color ?? '#6366f1'}26`,
-            } as React.CSSProperties}
-          >
-            {typeInfo ? (
-              <typeInfo.icon className="h-10 w-10 opacity-30" style={{ color: typeInfo.color }} />
-            ) : (
-              <div className="h-10 w-10 rounded-full bg-gray-200 dark:bg-white/10 opacity-50" />
-            )}
-          </div>
-        )}
 
-        {brief.campaign && (
-          <div className="absolute top-2 right-2 rounded-lg bg-black/60 backdrop-blur-sm px-2 py-1 max-w-[130px]">
-            <p className="text-[10px] font-semibold text-white truncate">{brief.campaign}</p>
-          </div>
-        )}
+          {brief.campaign && (
+            <div className="absolute top-2 right-2 rounded-lg bg-black/60 backdrop-blur-sm px-2 py-1 max-w-[130px]">
+              <p className="text-[10px] font-semibold text-white truncate">{brief.campaign}</p>
+            </div>
+          )}
 
-        {onCoverUpload && (
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
-            className="hidden"
-            {...STOP_DRAG}
-            onChange={e => {
-              setCoverMenuOpen(false)
-              const file = e.target.files?.[0] ?? null
-              e.target.value = ''
-              handleCoverChange(file)
-            }}
-          />
-        )}
+          {onCoverUpload && (
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+              className="hidden"
+              {...STOP_DRAG}
+              onChange={e => {
+                setCoverMenuOpen(false)
+                const file = e.target.files?.[0] ?? null
+                e.target.value = ''
+                handleCoverChange(file)
+              }}
+            />
+          )}
 
-        {uploadingCover && (
-          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-            <Loader2 className="h-5 w-5 text-white animate-spin" />
-          </div>
-        )}
+          {uploadingCover && (
+            <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+              <Loader2 className="h-5 w-5 text-white animate-spin" />
+            </div>
+          )}
 
-        {onCoverUpload && coverHover && !uploadingCover && (
-          <div
-            className="absolute bottom-2 right-2"
-            ref={coverMenuRef}
-            {...STOP_DRAG}
-            onClick={e => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              className="rounded-lg bg-black/70 px-2 py-1 flex items-center gap-1 hover:bg-black/85 transition-colors"
-              onClick={() => setCoverMenuOpen(v => !v)}
+          {onCoverUpload && coverHover && !uploadingCover && (
+            <div
+              className="absolute bottom-2 right-2"
+              ref={coverMenuRef}
+              {...STOP_DRAG}
+              onClick={e => e.stopPropagation()}
             >
-              <Upload className="h-3 w-3 text-white" />
-              <span className="text-[10px] font-semibold text-white">Cover</span>
-              <ChevronDown className="h-3 w-3 text-white" />
-            </button>
+              <button
+                type="button"
+                className="rounded-lg bg-black/70 px-2 py-1 flex items-center gap-1 hover:bg-black/85 transition-colors"
+                onClick={() => setCoverMenuOpen(v => !v)}
+              >
+                <Upload className="h-3 w-3 text-white" />
+                <span className="text-[10px] font-semibold text-white">Cover</span>
+                <ChevronDown className="h-3 w-3 text-white" />
+              </button>
 
-            {coverMenuOpen && (
-              <div className="absolute bottom-full mb-1 right-0 w-44 rounded-xl bg-white border border-zinc-200 shadow-xl overflow-hidden z-20">
-                <button
-                  type="button"
-                  className="flex items-center gap-2 w-full px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 transition-colors"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Upload className="h-3.5 w-3.5 text-zinc-400" />
-                  {brief.cover_url ? 'Replace cover' : 'Upload cover'}
-                </button>
-                {brief.cover_url && onCoverDelete && (
+              {coverMenuOpen && (
+                <div className="absolute bottom-full mb-1 right-0 w-44 rounded-xl bg-white border border-zinc-200 shadow-xl overflow-hidden z-20">
                   <button
                     type="button"
-                    className="flex items-center gap-2 w-full px-3 py-2 text-xs text-red-500 hover:bg-red-50 transition-colors"
-                    onClick={() => { setCoverMenuOpen(false); onCoverDelete() }}
+                    className="flex items-center gap-2 w-full px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50 transition-colors"
+                    onClick={() => fileInputRef.current?.click()}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Delete cover
+                    <Upload className="h-3.5 w-3.5 text-zinc-400" />
+                    Replace cover
                   </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+                  {onCoverDelete && (
+                    <button
+                      type="button"
+                      className="flex items-center gap-2 w-full px-3 py-2 text-xs text-red-500 hover:bg-red-50 transition-colors"
+                      onClick={() => { setCoverMenuOpen(false); onCoverDelete() }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Delete cover
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Content type chip — brand colour outline, quiet fill (~8% on light,
           ~4% on dark) so it reads as an accent rather than a filled pill. */}
@@ -542,7 +531,7 @@ export function BriefCard({
 export function ApprovedBriefCard({ brief, showClientChip = false }: { brief: Brief; clientColor?: string; showClientChip?: boolean }) {
   const typeInfo = CONTENT_TYPES.find(t => t.id === brief.content_type)
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#161B26] border border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none p-4">
+    <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#161B26] border-x border-b border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none p-4">
       {/* Client colour stripe — matches BriefCard so both card variants
           share the same brand accent. */}
       <span
@@ -647,7 +636,7 @@ export function BriefPanel({
   const hasDraft   = !!brief.draft_url
   const typeInfo   = CONTENT_TYPES.find(t => t.id === brief.content_type)
 
-  const [localName, setLocalName]           = useState(brief.name)
+  // Brief name isn't editable from this drawer, so no local state for it.
   const [localDesc, setLocalDesc]           = useState(brief.description ?? '')
   const [localCampaign, setLocalCampaign]   = useState(brief.campaign ?? '')
   const [localType, setLocalType]           = useState(brief.content_type ?? '')
@@ -659,7 +648,6 @@ export function BriefPanel({
   const [savingField, setSavingField]       = useState<string | null>(null)
 
   useEffect(() => {
-    if (editingField !== 'name')         setLocalName(brief.name)
     if (editingField !== 'description')  setLocalDesc(brief.description ?? '')
     if (editingField !== 'campaign')     setLocalCampaign(brief.campaign ?? '')
     if (editingField !== 'content_type') setLocalType(brief.content_type ?? '')
@@ -940,7 +928,7 @@ export function BriefPanel({
               )}
             </div>
           </div>
-          <button onClick={onClose} className="ml-4 flex-shrink-0 rounded-xl p-2 text-white/60 hover:text-white hover:bg-white/10 transition-colors">
+          <button onClick={onClose} aria-label="Close brief" className="ml-4 flex-shrink-0 rounded-xl p-2 text-white/60 hover:text-white hover:bg-white/10 transition-colors">
             <X className="h-5 w-5" />
           </button>
         </div>
