@@ -250,15 +250,30 @@ export default function InternalPipeline() {
   }
 
   async function handleRequestRevisions(briefId: string) {
+    // Hub QA: pull back to In Production, no client notification.
     const supabase = createClient()
     await supabase.from('briefs')
-      .update({ pipeline_status: 'client_review', internal_status: 'revisions_required' })
+      .update({ pipeline_status: 'in_production', internal_status: 'in_production' })
       .eq('id', briefId)
     setBriefs(prev => prev.map(b => b.id === briefId
-      ? { ...b, pipeline_status: 'client_review', internal_status: 'revisions_required' }
+      ? { ...b, pipeline_status: 'in_production', internal_status: 'in_production' }
       : b))
     if (selected?.id === briefId) {
-      setSelected(prev => prev ? { ...prev, pipeline_status: 'client_review', internal_status: 'revisions_required' } : null)
+      setSelected(prev => prev ? { ...prev, pipeline_status: 'in_production', internal_status: 'in_production' } : null)
+    }
+  }
+
+  async function handlePushToClient(briefId: string) {
+    // Hub admin pushes the draft to the client's portal review queue.
+    const supabase = createClient()
+    await supabase.from('briefs')
+      .update({ pipeline_status: 'client_review', internal_status: 'in_review' })
+      .eq('id', briefId)
+    setBriefs(prev => prev.map(b => b.id === briefId
+      ? { ...b, pipeline_status: 'client_review', internal_status: 'in_review' }
+      : b))
+    if (selected?.id === briefId) {
+      setSelected(prev => prev ? { ...prev, pipeline_status: 'client_review', internal_status: 'in_review' } : null)
     }
   }
 
@@ -403,6 +418,7 @@ export default function InternalPipeline() {
             showInternalNotesTab
             hubStaff={hubStaff}
             onAssignDesigner={handleAssignDesigner}
+            onPushToClient={() => handlePushToClient(selected.id)}
             onClose={() => setSelected(null)}
             onApprove={() => handleApprove(selected.id)}
             onRequestRevisions={() => handleRequestRevisions(selected.id)}

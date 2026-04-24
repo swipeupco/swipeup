@@ -219,6 +219,24 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
     }
   }
 
+  async function handlePushToClient(briefId: string) {
+    // Hub admin pushes a brief to the client's portal review queue. Writes
+    // pipeline_status='client_review' + internal_status='in_review'. Any
+    // existing DB notification trigger on pipeline_status='client_review'
+    // handles the client notification — we don't fire one inline.
+    const supabase = createClient()
+    await supabase
+      .from('briefs')
+      .update({ pipeline_status: 'client_review', internal_status: 'in_review' })
+      .eq('id', briefId)
+    setBriefs(prev => prev.map(b =>
+      b.id === briefId ? { ...b, pipeline_status: 'client_review', internal_status: 'in_review' } : b
+    ))
+    if (selectedBrief?.id === briefId) {
+      setSelectedBrief(prev => prev ? { ...prev, pipeline_status: 'client_review', internal_status: 'in_review' } : null)
+    }
+  }
+
   async function handleDeleteBrief(briefId: string) {
     const supabase = createClient()
     await supabase.from('brief_comments').delete().eq('brief_id', briefId)
@@ -490,6 +508,7 @@ export default function ClientPipeline({ params }: { params: Promise<{ clientSlu
               showInternalNotesTab
               hubStaff={hubStaff}
               onAssignDesigner={handleAssignDesigner}
+              onPushToClient={() => handlePushToClient(selectedBrief.id)}
               onClose={() => setSelectedBrief(null)}
               onApprove={() => handleApprove(selectedBrief.id)}
               onRequestRevisions={() => handleRequestRevisions(selectedBrief.id)}

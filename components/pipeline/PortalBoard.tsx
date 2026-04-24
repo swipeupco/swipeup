@@ -583,7 +583,7 @@ export function ApprovedBriefCard({ brief, showClientChip = false }: { brief: Br
 
 export function BriefPanel({
   brief, clientColor,
-  showInternalNotesTab, hubStaff, onAssignDesigner,
+  showInternalNotesTab, hubStaff, onAssignDesigner, onPushToClient, onRerun,
   onClose, onApprove, onRequestRevisions,
   onCoverUpload, onCoverDelete, onDelete, onReload,
 }: {
@@ -592,7 +592,14 @@ export function BriefPanel({
   showInternalNotesTab?: boolean
   hubStaff?: Array<{ id: string; name: string | null; avatar_url: string | null }>
   onAssignDesigner?: (briefId: string, staffId: string | null) => Promise<void> | void
+  /** Hub-only: moves brief to the client's review queue. Only rendered
+   *  when showInternalNotesTab is true and a draft link is set. */
+  onPushToClient?: () => void
+  /** Hub-only: creates a new backlog brief from an approved one (Task 6). */
+  onRerun?: () => Promise<void> | void
   onClose: () => void
+  /** onApprove is retained on the type for Portal embeds. Hub never shows
+   *  the Approve button — only clients approve. */
   onApprove: () => void
   onRequestRevisions: () => void
   onCoverUpload?: (file: File) => void
@@ -629,6 +636,13 @@ export function BriefPanel({
   const isApproved = brief.pipeline_status === 'approved'
   const hasDraft   = !!brief.draft_url
   const typeInfo   = CONTENT_TYPES.find(t => t.id === brief.content_type)
+  // Hub column resolution inside the drawer — mirrors page-level columnFor()
+  // so the action buttons below match the column the card visually sits in.
+  const isReadyForReviewCol = !isApproved && (
+    brief.pipeline_status === 'client_review' ||
+    brief.internal_status === 'in_review'
+  )
+  const isInProductionCol = !isApproved && !isReadyForReviewCol
 
   // Brief name isn't editable from this drawer, so no local state for it.
   const [localDesc, setLocalDesc]           = useState(brief.description ?? '')
@@ -1092,7 +1106,39 @@ export function BriefPanel({
                     </div>
                   </div>
                 )}
-                {isReview && hasDraft && !isApproved && (
+                {/* ── Hub QA actions ─────────────────────────────────────
+                    Hub never shows Approve — only clients approve from the
+                    Portal side. Buttons are gated by column:
+                      * In Production + hasDraft → Push to Client
+                      * Ready for Review         → Request Revisions (pulls
+                                                    brief back to In Production,
+                                                    no client ping)
+                      * Approved                 → no QA buttons (drawer is
+                                                    effectively read-only; the
+                                                    Task-6 re-run button lives
+                                                    separately at the bottom of
+                                                    the drawer)
+                */}
+                {showInternalNotesTab && isInProductionCol && hasDraft && onPushToClient && (
+                  <button
+                    onClick={onPushToClient}
+                    className="w-full flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-semibold text-white bg-[#4950F8] hover:bg-[#5d64ff] transition-colors"
+                  >
+                    <Send className="h-3.5 w-3.5" /> Push to Client
+                  </button>
+                )}
+                {showInternalNotesTab && isReadyForReviewCol && (
+                  <button
+                    onClick={onRequestRevisions}
+                    className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-red-100 dark:border-red-400/30 py-2.5 text-xs font-semibold text-red-500 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" /> Request Revisions
+                  </button>
+                )}
+                {/* Portal embeds (no showInternalNotesTab) keep the original
+                    Approve + Request Revisions pair so the component stays
+                    reusable across Hub/Portal. */}
+                {!showInternalNotesTab && isReview && hasDraft && !isApproved && (
                   <div className="flex gap-2">
                     <button onClick={onRequestRevisions}
                       className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-red-100 py-2.5 text-xs font-semibold text-red-500 hover:bg-red-50 transition-colors">
