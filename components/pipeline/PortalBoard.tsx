@@ -249,14 +249,17 @@ export function BriefCard({
     // drag initiation via {...STOP_DRAG}.
     <div
       {...(dragHandleProps ?? {})}
-      // Dark-mode surface lifted to #22283A (from #161B26) so cards separate
-      // clearly from the column at #0F1420 and the canvas at #0B1220 — Trello
-      // "cards float on darker board" look. Light mode unchanged (bg-white).
+      // Surface hierarchy (both modes, Trello "cards float" aesthetic):
+      //   Light: canvas #F7F8FA → column bg-white → card bg-white + shadow-md
+      //   Dark:  canvas #0B1220 → column #0F1420   → card #22283A
+      // Light-mode lift comes from the shadow (card stays pure white); dark
+      // lift comes from a lighter bg against the darker column/canvas.
       className={`relative overflow-hidden rounded-2xl bg-white dark:bg-[#22283A] p-4 transition-all ${isDragging
         ? 'rotate-1 scale-105 cursor-grabbing'
         // Sides + bottom border only — top dropped to avoid the blue-tinted
-        // edge against the pipeline gradient.
-        : 'border-x border-b border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none hover:shadow-md dark:hover:border-white/[0.14] cursor-grab active:cursor-grabbing'
+        // edge against the pipeline gradient in dark mode. Light-mode shadow
+        // upgraded from shadow-sm to shadow-md for clearer elevation.
+        : 'border-x border-b border-gray-100 dark:border-white/[0.08] shadow-md dark:shadow-none hover:shadow-lg dark:hover:border-white/[0.14] cursor-grab active:cursor-grabbing'
       }`}
       style={isDragging ? {
         boxShadow: '0 8px 24px rgba(0,0,0,0.45)',
@@ -527,7 +530,7 @@ export function BriefCard({
 export function ApprovedBriefCard({ brief, showClientChip = false }: { brief: Brief; clientColor?: string; showClientChip?: boolean }) {
   const typeInfo = CONTENT_TYPES.find(t => t.id === brief.content_type)
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#22283A] border-x border-b border-gray-100 dark:border-white/[0.08] shadow-sm dark:shadow-none p-4">
+    <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#22283A] border-x border-b border-gray-100 dark:border-white/[0.08] shadow-md dark:shadow-none p-4">
       {/* Client colour stripe removed — matches BriefCard, typography does
           the work of identifying the client via the logo + name pill. */}
       {showClientChip && brief.client_name && (
