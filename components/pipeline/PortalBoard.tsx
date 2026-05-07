@@ -294,33 +294,15 @@ export function BriefCard({
         )}
       </div>
 
-      {/* Thumbnail / Cover */}
+      {/* Thumbnail / Cover — only rendered when a cover image is set */}
+      {brief.cover_url && (
       <div
         className="relative h-28 rounded-xl mb-3 overflow-hidden"
         onMouseEnter={() => setCoverHover(true)}
         onMouseLeave={() => setCoverHover(false)}
       >
-        {brief.cover_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={brief.cover_url} alt="" className="h-full w-full object-cover" />
-        ) : (
-          // Cover placeholder — light pastel on light, flat ~15% brand-tint on dark.
-          // CSS custom props + Tailwind arbitrary-property classes keep this SSR-safe
-          // (no flash) across the .dark class toggle.
-          <div
-            className="h-full w-full flex items-center justify-center [background:var(--ph-light)] dark:[background:var(--ph-dark)]"
-            style={{
-              ['--ph-light' as string]: `linear-gradient(135deg, ${typeInfo?.color ?? '#6366f1'}22 0%, ${typeInfo?.color ?? '#6366f1'}44 100%)`,
-              ['--ph-dark'  as string]: `${typeInfo?.color ?? '#6366f1'}26`,
-            } as React.CSSProperties}
-          >
-            {typeInfo ? (
-              <typeInfo.icon className="h-10 w-10 opacity-30" style={{ color: typeInfo.color }} />
-            ) : (
-              <div className="h-10 w-10 rounded-full bg-gray-200 dark:bg-white/10 opacity-50" />
-            )}
-          </div>
-        )}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={brief.cover_url} alt="" className="h-full w-full object-cover" />
 
         {brief.campaign && (
           <div className="absolute top-2 right-2 rounded-lg bg-black/60 backdrop-blur-sm px-2 py-1 max-w-[130px]">
@@ -392,6 +374,7 @@ export function BriefCard({
           </div>
         )}
       </div>
+      )}
 
       {/* Content type badge — brand colour, lower background opacity on dark so
           it doesn't glare against the dark canvas. */}
